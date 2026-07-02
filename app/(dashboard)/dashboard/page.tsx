@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  Users, GraduationCap, UserCheck, Clock, ScanFace, ArrowRight,
+  Users, GraduationCap, UserCheck, UserX, ScanFace, ArrowRight,
 } from 'lucide-react';
 import AttendanceChart from '@/components/AttendanceChart';
 import { formatTime, statusBadge, statusLabel } from '@/lib/utils';
@@ -15,6 +15,7 @@ interface Stats {
   teachers: number;
   todayPresent: number;
   todayLate: number;
+  todayAbsent: number;
   todayTotal: number;
 }
 
@@ -47,7 +48,7 @@ export default function DashboardPage() {
     { label: isTeacher ? 'Mening talabalarim' : 'Talabalar', value: data.stats.activeStudents, icon: Users,        color: 'from-blue-500 to-blue-600',     href: '/students' },
     { label: isTeacher ? 'Mening guruhlarim'  : 'Guruhlar',  value: data.stats.groups,         icon: GraduationCap,color: 'from-violet-500 to-violet-600', href: '/groups' },
     { label: 'Bugun keldi',   value: data.stats.todayPresent,   icon: UserCheck,    color: 'from-emerald-500 to-emerald-600', href: '/attendance' },
-    { label: 'Bugun kech',    value: data.stats.todayLate,      icon: Clock,        color: 'from-amber-500 to-amber-600',   href: '/attendance' },
+    { label: 'Bugun kelmadi', value: data.stats.todayAbsent,    icon: UserX,        color: 'from-rose-500 to-rose-600',     href: '/attendance' },
   ];
 
   return (
@@ -96,7 +97,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">Soʻnggi 7 kun davomati</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Kelgan va kech qolganlar boʻyicha</p>
+              <p className="text-xs text-slate-500 mt-0.5">Kelgan va kelmaganlar boʻyicha</p>
             </div>
           </div>
           <AttendanceChart data={data.chart} />

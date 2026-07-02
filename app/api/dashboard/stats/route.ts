@@ -34,7 +34,7 @@ export async function GET() {
 
     const [
       studentsCount, activeStudents, groupsCount, teachersCount,
-      todayPresent, todayLate, todayAttendance, last7,
+      todayPresent, todayLate, todayAbsent, todayAttendance, last7,
     ] = await Promise.all([
       prisma.student.count({ where: studentWhere }),
       prisma.student.count({ where: { ...studentWhere, isActive: true } }),
@@ -51,6 +51,9 @@ export async function GET() {
       }),
       prisma.attendance.count({
         where: { ...attendanceWhere, date: today, status: 'LATE' },
+      }),
+      prisma.attendance.count({
+        where: { ...attendanceWhere, date: today, status: 'ABSENT' },
       }),
       prisma.attendance.findMany({
         where: { ...attendanceWhere, date: today },
@@ -74,13 +77,13 @@ export async function GET() {
       }),
     ]);
 
-    // Build chart data: array of { date, present, late }
-    const dayMap = new Map<string, { date: string; present: number; late: number }>();
+    // Build chart data: array of { date, present, late, absent }
+    const dayMap = new Map<string, { date: string; present: number; late: number; absent: number }>();
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
       const key = d.toISOString().split('T')[0];
-      dayMap.set(key, { date: key, present: 0, late: 0 });
+      dayMap.set(key, { date: key, present: 0, late: 0, absent: 0 });
     }
     for (const row of last7) {
       const key = new Date(row.date).toISOString().split('T')[0];
@@ -88,6 +91,7 @@ export async function GET() {
       if (!entry) continue;
       if (row.status === 'PRESENT') entry.present = row._count._all;
       if (row.status === 'LATE')    entry.late    = row._count._all;
+      if (row.status === 'ABSENT')  entry.absent  = row._count._all;
     }
     const chart = Array.from(dayMap.values());
 
@@ -99,6 +103,7 @@ export async function GET() {
         teachers: teachersCount,
         todayPresent,
         todayLate,
+        todayAbsent,
         todayTotal: todayPresent + todayLate,
       },
       todayAttendance,

@@ -9,6 +9,7 @@ interface ChartDatum {
   date: string; // YYYY-MM-DD
   present: number;
   late: number;
+  absent: number;
 }
 
 export default function AttendanceChart({ data }: { data: ChartDatum[] }) {
@@ -27,9 +28,9 @@ export default function AttendanceChart({ data }: { data: ChartDatum[] }) {
               <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
               <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
             </linearGradient>
-            <linearGradient id="grad-late" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.35} />
-              <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
+            <linearGradient id="grad-absent" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.35} />
+              <stop offset="100%" stopColor="#f43f5e" stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="rgb(148 163 184 / 0.15)" vertical={false} />
@@ -48,21 +49,22 @@ export default function AttendanceChart({ data }: { data: ChartDatum[] }) {
           <Legend
             iconType="circle"
             wrapperStyle={{ fontSize: 12, paddingTop: 4 }}
-            formatter={(v) => v === 'present' ? 'Kelganlar' : 'Kech qolganlar'}
           />
           <Area
             type="monotone"
             dataKey="present"
+            name="Kelganlar"
             stroke="#10b981"
             strokeWidth={2}
             fill="url(#grad-present)"
           />
           <Area
             type="monotone"
-            dataKey="late"
-            stroke="#f59e0b"
+            dataKey="absent"
+            name="Kelmaganlar"
+            stroke="#f43f5e"
             strokeWidth={2}
-            fill="url(#grad-late)"
+            fill="url(#grad-absent)"
           />
         </AreaChart>
       </ResponsiveContainer>
