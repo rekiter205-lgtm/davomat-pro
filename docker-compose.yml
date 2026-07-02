@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: davomat-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: davomat
+      POSTGRES_PASSWORD: davomat
+      POSTGRES_DB: davomat_pro
+    ports:
+      - "5432:5432"
+    volumes:
+      - davomat_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U davomat -d davomat_pro"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: davomat-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://davomat:davomat@db:5432/davomat_pro?schema=public
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-string-min-32-characters}
+      JWT_EXPIRES_IN: 7d
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3001}
+      MAX_UPLOAD_SIZE_MB: 5
+      FACE_MATCH_THRESHOLD: "0.55"
+      LATE_THRESHOLD_MINUTES: "15"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      SMS_PROVIDER_EMAIL: ${SMS_PROVIDER_EMAIL:-}
+      SMS_PROVIDER_PASSWORD: ${SMS_PROVIDER_PASSWORD:-}
+    ports:
+      - "3001:3000"
+    volumes:
+      - davomat_uploads:/app/public/uploads
+      - davomat_models:/app/public/models
+
+volumes:
+  davomat_pgdata:
+  davomat_uploads:
+  davomat_models:
