@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/jwt';
 import { AUTH_COOKIE } from '@/lib/auth';
 
-const PUBLIC_PATHS = ['/login', '/api/auth/login'];
+// /api/health — monitoring/liveness probe, autentifikatsiyasiz ishlashi shart
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/health'];
 
 // API paths that require ADMIN role for writes
 const ADMIN_API = [

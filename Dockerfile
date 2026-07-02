@@ -14,6 +14,13 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# NEXT_PUBLIC_* lar build vaqtida bundlega yoziladi — demo rejim shu yerdan o'tadi
+ARG NEXT_PUBLIC_DEMO_CREDENTIALS=0
+ENV NEXT_PUBLIC_DEMO_CREDENTIALS=$NEXT_PUBLIC_DEMO_CREDENTIALS
+# Faqat build (page-data collection) uchun placeholder'lar — bu stage'dagi ENV
+# runner'ga o'tmaydi; runtime qiymatlar docker-compose'dan keladi.
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
+ENV JWT_SECRET="build-time-placeholder-secret-not-used-at-runtime"
 RUN npx prisma generate && npm run build
 
 # ─── Stage 3: runner ─────────────────────────────────────────

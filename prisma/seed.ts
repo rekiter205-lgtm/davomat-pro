@@ -6,6 +6,8 @@
  */
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
 // Use const object instead of importing Role enum (Prisma client might be stale at build time)
 const Role = {
@@ -16,6 +18,37 @@ const Role = {
 };
 
 const prisma = new PrismaClient();
+
+// Deterministik pseudo-random (mulberry32) — seed har safar bir xil tarix beradi
+function mulberry32(a: number) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Lokal SVG avatar yaratadi (internetga bog'liq bo'lmagan demo suratlar). */
+function makeAvatar(fullName: string, color: string): string {
+  const initials = fullName
+    .split(' ')
+    .slice(0, 2)
+    .map((s) => s[0])
+    .join('')
+    .toUpperCase();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+  <rect width="256" height="256" rx="24" fill="${color}"/>
+  <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle"
+        font-family="Arial, sans-serif" font-size="96" font-weight="bold" fill="#ffffff">${initials}</text>
+</svg>`;
+  const slug = fullName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const dir = path.join(process.cwd(), 'public', 'uploads');
+  mkdirSync(dir, { recursive: true });
+  const filename = `seed-${slug}.svg`;
+  writeFileSync(path.join(dir, filename), svg, 'utf8');
+  return `/uploads/${filename}`;
+}
 
 async function main() {
   console.log('🌱  Seeding database...');
@@ -198,7 +231,147 @@ async function main() {
   }
   console.log(`✓  Lessons: ${lessonCount} ta dars`);
 
-  // ── 7. Settings ────────────────────────────────────────
+  // ── 7. Students (demo) ─────────────────────────────────
+  // fullName unique emas — idempotentlik uchun findFirst + create.
+  const AVATAR_COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f97316', '#ec4899', '#06b6d4', '#84cc16', '#f43f5e'];
+  const studentPlan: Array<{ fullName: string; groupId: string }> = [
+    // 5-B — asosiy demo sinf (jadval to'liq shu sinfda)
+    { fullName: 'Rustamov Jasur',     groupId: group2.id },
+    { fullName: 'Yusupova Malika',    groupId: group2.id },
+    { fullName: 'Toshpulatov Aziz',   groupId: group2.id },
+    { fullName: 'Ergasheva Nilufar',  groupId: group2.id },
+    { fullName: 'Qodirov Bekzod',     groupId: group2.id },
+    { fullName: 'Islomova Sevinch',   groupId: group2.id },
+    { fullName: 'Mirzayev Doston',    groupId: group2.id },
+    { fullName: 'Akbarova Shahzoda',  groupId: group2.id },
+    // 5-A
+    { fullName: 'Saidov Timur',       groupId: group1.id },
+    { fullName: 'Nazarova Zilola',    groupId: group1.id },
+    { fullName: 'Umarov Sardor',      groupId: group1.id },
+    { fullName: 'Xolmatova Gulnora',  groupId: group1.id },
+    { fullName: 'Raimov Otabek',      groupId: group1.id },
+    // 6-A
+    { fullName: 'Karimov Farrux',     groupId: group3.id },
+    { fullName: 'Sobirova Kamola',    groupId: group3.id },
+    { fullName: 'Abdullayev Sanjar',  groupId: group3.id },
+  ];
+
+  const students: Array<{ id: string; fullName: string; groupId: string | null }> = [];
+  for (let i = 0; i < studentPlan.length; i++) {
+    const sp = studentPlan[i];
+    let student = await prisma.student.findFirst({ where: { fullName: sp.fullName } });
+    if (!student) {
+      student = await prisma.student.create({
+        data: {
+          fullName: sp.fullName,
+          groupId: sp.groupId,
+          photoUrl: makeAvatar(sp.fullName, AVATAR_COLORS[i % AVATAR_COLORS.length]),
+          parentPhone: `+9989012345${String(10 + i)}`,
+        },
+      });
+    }
+    students.push({ id: student.id, fullName: student.fullName, groupId: student.groupId });
+  }
+  console.log(`✓  Students: ${students.length} ta talaba`);
+
+  // ── 8. Student & Parent demo accounts ──────────────────
+  // O'quvchi akkaunti — 5-B'dan Rustamov Jasur
+  const studentUser = await prisma.user.upsert({
+    where: { username: 'oquvchi' },
+    update: {},
+    create: {
+      username: 'oquvchi',
+      fullName: 'Rustamov Jasur',
+      passwordHash: await bcrypt.hash('student123', 10),
+      plainPassword: 'student123',
+      role: Role.STUDENT,
+    },
+  });
+  await prisma.student.update({
+    where: { id: students[0].id },
+    data: { userId: studentUser.id },
+  });
+
+  // Ota-ona akkaunti — Jasur va Malikaning otasi
+  const parentUser = await prisma.user.upsert({
+    where: { username: 'otaona' },
+    update: {},
+    create: {
+      username: 'otaona',
+      fullName: 'Rustamov Akmal',
+      phone: '+998901112233',
+      passwordHash: await bcrypt.hash('parent123', 10),
+      plainPassword: 'parent123',
+      role: Role.PARENT,
+    },
+  });
+  await prisma.user.update({
+    where: { id: parentUser.id },
+    data: { children: { connect: [{ id: students[0].id }, { id: students[1].id }] } },
+  });
+  console.log('✓  Accounts: oquvchi / student123, otaona / parent123');
+
+  // ── 9. Demo attendance history (oxirgi 3 hafta) ────────
+  // Har bir o'quvchiga o'z "profili": a'lochi ~97%, o'rtacha ~88%, sustroq ~72%
+  const DAY_CODES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const allLessons = await prisma.lesson.findMany({ select: { id: true, groupId: true, dayOfWeek: true, period: { select: { startTime: true } } } });
+  const rand = mulberry32(20260702);
+
+  const profileOf = (idx: number) => (idx % 5 === 4 ? 0.72 : idx % 3 === 0 ? 0.97 : 0.88);
+
+  const rows: Array<{
+    studentId: string; lessonId: string; status: 'PRESENT' | 'LATE' | 'ABSENT';
+    date: Date; checkInAt: Date | null; method: string; confidence: number | null;
+  }> = [];
+
+  const HISTORY_DAYS = 21;
+  for (let back = HISTORY_DAYS; back >= 1; back--) {
+    const d = new Date();
+    d.setDate(d.getDate() - back);
+    const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate()); // local startOfDay
+    const dayCode = DAY_CODES[dateOnly.getDay()];
+    const todaysLessons = allLessons.filter((l: typeof allLessons[number]) => l.dayOfWeek === dayCode);
+
+    for (const lesson of todaysLessons) {
+      const groupStudents = students.filter((s) => s.groupId === lesson.groupId);
+      for (const st of groupStudents) {
+        const idx = students.findIndex((x) => x.id === st.id);
+        const attendRate = profileOf(idx);
+        const r = rand();
+
+        const [hh, mm] = lesson.period.startTime.split(':').map(Number);
+        if (r < attendRate) {
+          // PRESENT — yuz orqali, dars boshidan 0–4 daqiqa ichida
+          const checkIn = new Date(dateOnly);
+          checkIn.setHours(hh, mm + Math.floor(rand() * 5), Math.floor(rand() * 60));
+          rows.push({
+            studentId: st.id, lessonId: lesson.id, status: 'PRESENT',
+            date: dateOnly, checkInAt: checkIn, method: 'face',
+            confidence: Math.round((0.62 + rand() * 0.3) * 100) / 100,
+          });
+        } else if (r < attendRate + 0.05) {
+          // LATE — o'qituvchi qo'lda belgilagan
+          const checkIn = new Date(dateOnly);
+          checkIn.setHours(hh, mm + 8 + Math.floor(rand() * 10), 0);
+          rows.push({
+            studentId: st.id, lessonId: lesson.id, status: 'LATE',
+            date: dateOnly, checkInAt: checkIn, method: 'manual', confidence: null,
+          });
+        } else {
+          // ABSENT — yo'qlama yakunida avtomatik
+          rows.push({
+            studentId: st.id, lessonId: lesson.id, status: 'ABSENT',
+            date: dateOnly, checkInAt: null, method: 'auto-absent', confidence: null,
+          });
+        }
+      }
+    }
+  }
+
+  const created = await prisma.attendance.createMany({ data: rows, skipDuplicates: true });
+  console.log(`✓  Attendance history: ${created.count} ta yozuv (${HISTORY_DAYS} kun)`);
+
+  // ── 10. Settings ───────────────────────────────────────
   await prisma.setting.upsert({
     where: { key: 'faceMatchThreshold' },
     update: {},
@@ -209,6 +382,8 @@ async function main() {
   console.log('   ➜  Admin:    admin / admin123');
   console.log('   ➜  Teacher:  aliyev / teacher123');
   console.log('   ➜  Teacher:  karimova / teacher123');
+  console.log('   ➜  Student:  oquvchi / student123');
+  console.log('   ➜  Parent:   otaona / parent123');
 }
 
 main()

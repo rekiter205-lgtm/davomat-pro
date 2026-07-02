@@ -177,9 +177,12 @@ npm run seed
 
 This creates:
 - **admin** / `admin123` — full access
-- **aliyev** / `teacher123` — teacher role
-- **karimova** / `teacher123` — teacher role
-- 3 sample groups, 7 sample students (without face data)
+- **aliyev** / `teacher123`, **karimova** / `teacher123` — teacher role
+- **oquvchi** / `student123` — student role (linked to a 5-B student)
+- **otaona** / `parent123` — parent role (linked to two children)
+- 6 periods, 8 subjects, 3 groups, a weekly lesson grid (19 lessons)
+- 16 demo students with generated local SVG avatars (no face data — enroll via UI)
+- **3 weeks of realistic attendance history** (~490 records: face check-ins, lates, auto-absents) so dashboards and reports look alive on first run
 
 ### 5. Download AI models
 

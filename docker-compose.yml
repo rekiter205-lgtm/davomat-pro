@@ -18,7 +18,11 @@ services:
       retries: 5
 
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # .env dagi NEXT_PUBLIC_DEMO_CREDENTIALS=1 bo'lsa login forma demo rejimda bo'ladi
+        NEXT_PUBLIC_DEMO_CREDENTIALS: ${NEXT_PUBLIC_DEMO_CREDENTIALS:-0}
     container_name: davomat-app
     restart: unless-stopped
     depends_on:
