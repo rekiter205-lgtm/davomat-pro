@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Camera, CameraOff, Loader2, ScanFace } from 'lucide-react';
+import { Camera, CameraOff, Loader2, ScanFace, SwitchCamera } from 'lucide-react';
 import { loadFaceModels, detectSingleFace, descriptorToArray } from '@/ai/face-recognition';
+
+const DEVICE_STORAGE_KEY = 'faceScanner.deviceId';
 
 interface FaceScannerProps {
   /** Called whenever a face is detected & a 128-d descriptor extracted. */
@@ -31,6 +33,28 @@ export default function FaceScanner({
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
 
+  // Kamera qurilmalari (telefonni veb-kamera sifatida tanlash uchun)
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+
+  // Saqlangan tanlovni tiklash (pitch paytida sahifa yangilansa ham qoladi)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(DEVICE_STORAGE_KEY);
+      if (saved) setDeviceId(saved);
+    } catch {}
+  }, []);
+
+  // Mavjud kamera qurilmalarini yangilash
+  const refreshDevices = useCallback(async () => {
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices();
+      setDevices(all.filter((d) => d.kind === 'videoinput'));
+    } catch (e) {
+      console.error('enumerateDevices xatosi:', e);
+    }
+  }, []);
+
   // Load models once
   useEffect(() => {
     loadFaceModels()
@@ -46,23 +70,37 @@ export default function FaceScanner({
   const startCamera = useCallback(async () => {
     try {
       setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-      });
+      // Tanlangan qurilma bo'lsa — o'shani, aks holda old kamerani ishlatamiz
+      const video: MediaTrackConstraints = deviceId
+        ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
+        : { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' };
+      const stream = await navigator.mediaDevices.getUserMedia({ video });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
         setStreamActive(true);
       }
+      // Ruxsat berilgach qurilma nomlari (label) ko'rinadi — ro'yxatni yangilaymiz
+      await refreshDevices();
     } catch (err: any) {
       console.error(err);
       setError(
         err?.name === 'NotAllowedError'
           ? 'Kamera ruxsati berilmadi. Brauzer sozlamalarini tekshiring.'
-          : 'Kamerani yoqib boʻlmadi: ' + (err?.message || 'noma\'lum xato'),
+          : err?.name === 'OverconstrainedError' || err?.name === 'NotFoundError'
+            ? 'Tanlangan kamera topilmadi. Boshqa kamerani tanlang (telefon ulanganini tekshiring).'
+            : 'Kamerani yoqib boʻlmadi: ' + (err?.message || 'noma\'lum xato'),
       );
       setStreamActive(false);
     }
+  }, [deviceId, refreshDevices]);
+
+  // Kamera tanlanganda saqlab qo'yamiz (startCamera identifikatori o'zgarib qayta ishga tushadi)
+  const selectDevice = useCallback((id: string) => {
+    setDeviceId(id);
+    try {
+      localStorage.setItem(DEVICE_STORAGE_KEY, id);
+    } catch {}
   }, []);
 
   const stopCamera = useCallback(() => {
@@ -191,6 +229,26 @@ export default function FaceScanner({
             <button onClick={startCamera} className="btn-primary">
               <Camera className="w-4 h-4" /> Kamerani yoqish
             </button>
+          </div>
+        )}
+
+        {/* Kamera tanlash — telefonni (DroidCam/Iriun) yoki boshqa kamerani tanlash uchun */}
+        {streamActive && !error && devices.length > 1 && (
+          <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/60 backdrop-blur-sm text-xs text-white">
+            <SwitchCamera className="w-3.5 h-3.5 text-brand-400 flex-shrink-0" />
+            <select
+              value={deviceId ?? ''}
+              onChange={(e) => selectDevice(e.target.value)}
+              className="bg-transparent text-white text-xs outline-none max-w-[10rem] cursor-pointer [&>option]:text-black"
+              title="Kamerani tanlang"
+            >
+              {!deviceId && <option value="">Standart kamera</option>}
+              {devices.map((d, i) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || `Kamera ${i + 1}`}
+                </option>
+              ))}
+            </select>
           </div>
         )}
 
