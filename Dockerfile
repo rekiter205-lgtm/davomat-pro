@@ -25,7 +25,9 @@ RUN npx prisma generate && npm run build
 
 # ─── Stage 3: runner ─────────────────────────────────────────
 FROM node:20-alpine AS runner
-RUN apk add --no-cache openssl
+# tzdata — TZ=Asia/Tashkent ishlashi uchun shart. Bo'lmasa Node jimgina
+# UTC'ga qaytadi va dars vaqtlari 5 soat surilib ketadi.
+RUN apk add --no-cache openssl tzdata
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

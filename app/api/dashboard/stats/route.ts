@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { startOfDay } from '@/lib/utils';
+import { startOfDay, toDateKey } from '@/lib/utils';
 import { getCurrentUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -82,11 +82,11 @@ export async function GET() {
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
-      const key = d.toISOString().split('T')[0];
+      const key = toDateKey(d);
       dayMap.set(key, { date: key, present: 0, late: 0, absent: 0 });
     }
     for (const row of last7) {
-      const key = new Date(row.date).toISOString().split('T')[0];
+      const key = toDateKey(new Date(row.date));
       const entry = dayMap.get(key);
       if (!entry) continue;
       if (row.status === 'PRESENT') entry.present = row._count._all;

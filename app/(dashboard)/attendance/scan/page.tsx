@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { CheckCircle2, AlertTriangle, XCircle, Clock, BookOpen, Loader2, ArrowLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
 import FaceScanner from '@/components/FaceScanner';
-import { statusLabel, statusBadge, formatTime, dayCodeOf, periodStatus, formatCountdown } from '@/lib/utils';
+import { statusLabel, statusBadge, formatTime, dayCodeOf, periodStatus, formatCountdown, toDateKey } from '@/lib/utils';
 
 interface Lesson {
   id: string;
@@ -225,7 +225,7 @@ function ScanContent() {
             </div>
           </div>
           <Link
-            href={`/attendance?date=${new Date().toISOString().slice(0, 10)}&groupId=${lesson.group.id}`}
+            href={`/attendance?date=${toDateKey(new Date())}&groupId=${lesson.group.id}`}
             className="btn-primary text-xs"
           >
             Davomatni koʻrish

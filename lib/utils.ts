@@ -22,6 +22,21 @@ export function startOfDay(d: Date | string): Date {
   return date;
 }
 
+/**
+ * Format Date as `YYYY-MM-DD` in LOCAL time.
+ *
+ * `toISOString()` ni ishlatib bo'lmaydi: u UTC'ga o'giradi va UTC+5 da
+ * lokal yarim tun oldingi kunga tushib qoladi (00:00 → 19:00 Z).
+ * Sanalar `startOfDay` bilan lokal yarim tunda saqlanadi, shuning uchun
+ * kalit ham lokal bo'lishi shart.
+ */
+export function toDateKey(d: Date | string): string {
+  const date = typeof d === 'string' ? new Date(d) : d;
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${m}-${day}`;
+}
+
 /** Format Date as `HH:mm`. */
 export function formatTime(d: Date | string | null | undefined): string {
   if (!d) return '—';

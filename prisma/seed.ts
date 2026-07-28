@@ -311,11 +311,20 @@ async function main() {
   });
   console.log('✓  Accounts: oquvchi / student123, otaona / parent123');
 
-  // ── 9. Demo attendance history (oxirgi 3 hafta) ────────
+  // ── 9. Demo attendance history (oxirgi ~1 oy, bugun bilan birga) ──
   // Har bir o'quvchiga o'z "profili": a'lochi ~97%, o'rtacha ~88%, sustroq ~72%
   const DAY_CODES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const allLessons = await prisma.lesson.findMany({ select: { id: true, groupId: true, dayOfWeek: true, period: { select: { startTime: true } } } });
   const rand = mulberry32(20260702);
+
+  // Yuqoridagi `students` — faqat seed yaratgan 16 ta. Tarix esa bazadagi
+  // BARCHA o'quvchilarga kerak (UI orqali qo'shilganlar ham), aks holda
+  // dashboard "46 o'quvchi" deb turib, davomatda 16 tasi ko'rinadi.
+  const allStudents = await prisma.student.findMany({
+    where: { isActive: true },
+    select: { id: true, groupId: true },
+    orderBy: { createdAt: 'asc' },
+  });
 
   const profileOf = (idx: number) => (idx % 5 === 4 ? 0.72 : idx % 3 === 0 ? 0.97 : 0.88);
 
@@ -324,8 +333,13 @@ async function main() {
     date: Date; checkInAt: Date | null; method: string; confidence: number | null;
   }> = [];
 
-  const HISTORY_DAYS = 21;
-  for (let back = HISTORY_DAYS; back >= 1; back--) {
+  // Tarix chuqurligi — SEED_HISTORY_DAYS bilan kengaytirish mumkin (eski bo'shliqni to'ldirish uchun).
+  const HISTORY_DAYS = Number(process.env.SEED_HISTORY_DAYS ?? 30);
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  // back = 0 → bugun. Bugungi kun ham to'ldiriladi, aks holda dashboard bo'sh ko'rinadi.
+  for (let back = HISTORY_DAYS; back >= 0; back--) {
     const d = new Date();
     d.setDate(d.getDate() - back);
     const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate()); // local startOfDay
@@ -333,13 +347,17 @@ async function main() {
     const todaysLessons = allLessons.filter((l: typeof allLessons[number]) => l.dayOfWeek === dayCode);
 
     for (const lesson of todaysLessons) {
-      const groupStudents = students.filter((s) => s.groupId === lesson.groupId);
+      const [hh, mm] = lesson.period.startTime.split(':').map(Number);
+      // Bugun uchun hali boshlanmagan darsga davomat yozmaymiz — bo'lmasa
+      // kelajakdagi para "ABSENT" bo'lib chiqadi.
+      if (back === 0 && hh * 60 + mm > nowMinutes) continue;
+
+      const groupStudents = allStudents.filter((s) => s.groupId === lesson.groupId);
       for (const st of groupStudents) {
-        const idx = students.findIndex((x) => x.id === st.id);
+        const idx = allStudents.findIndex((x) => x.id === st.id);
         const attendRate = profileOf(idx);
         const r = rand();
 
-        const [hh, mm] = lesson.period.startTime.split(':').map(Number);
         if (r < attendRate) {
           // PRESENT — yuz orqali, dars boshidan 0–4 daqiqa ichida
           const checkIn = new Date(dateOnly);
@@ -369,7 +387,7 @@ async function main() {
   }
 
   const created = await prisma.attendance.createMany({ data: rows, skipDuplicates: true });
-  console.log(`✓  Attendance history: ${created.count} ta yozuv (${HISTORY_DAYS} kun)`);
+  console.log(`✓  Attendance history: ${created.count} ta yangi yozuv (oxirgi ${HISTORY_DAYS} kun, bugun bilan)`);
 
   // ── 10. Settings ───────────────────────────────────────
   await prisma.setting.upsert({

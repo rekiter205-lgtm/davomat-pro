@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Clock, BookOpen, Users, ScanFace, Lock, Check, AlertCircle } from 'lucide-react';
-import { dayCodeOf, DAY_LABELS_UZ_FULL, periodStatus, formatCountdown } from '@/lib/utils';
+import { dayCodeOf, DAY_LABELS_UZ_FULL, periodStatus, formatCountdown, toDateKey } from '@/lib/utils';
 
 interface Lesson {
   id: string;
@@ -150,7 +150,7 @@ function LessonCard({
                 <span>Yoʻqlama tugagan</span>
               </div>
               <Link
-                href={`/attendance?date=${new Date().toISOString().slice(0, 10)}&groupId=${lesson.group.id}`}
+                href={`/attendance?date=${toDateKey(new Date())}&groupId=${lesson.group.id}`}
                 className="text-xs text-brand-600 hover:underline"
               >
                 Davomatni ko'rish →

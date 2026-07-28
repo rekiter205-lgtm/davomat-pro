@@ -16,6 +16,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
+    "demo:prepare": "tsx scripts/prepare-demo.ts",
+    "test:telegram": "tsx scripts/test-telegram.ts",
     "setup:models": "tsx scripts/download-models.ts",
     "postinstall": "prisma generate"
   },

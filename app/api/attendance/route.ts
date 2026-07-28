@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { prisma } from '@/lib/prisma';
-import { startOfDay } from '@/lib/utils';
+import { startOfDay, toDateKey } from '@/lib/utils';
 import { getCurrentUser } from '@/lib/auth';
 import { audit } from '@/lib/audit';
 
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
       actorId: session.sub,
       actorName: session.fullName,
       targetId: studentId,
-      details: { lessonId, status, date: dateOnly.toISOString().slice(0, 10) },
+      details: { lessonId, status, date: toDateKey(dateOnly) },
     });
 
     return NextResponse.json({ attendance: record }, { status: 201 });
