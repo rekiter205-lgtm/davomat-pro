@@ -6,12 +6,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 
 import { prisma } from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth';
 import { startOfDay, formatDateUz, statusLabel } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
+    // Middleware login'ni tekshiradi, lekin rolni emas — usiz STUDENT/PARENT
+    // ham butun maktab davomatini yuklab olardi.
+    const session = await getCurrentUser();
+    if (!session) return NextResponse.json({ error: 'Avtorizatsiya' }, { status: 401 });
+    if (session.role !== 'ADMIN' && session.role !== 'TEACHER') {
+      return NextResponse.json({ error: 'Ruxsat yoʻq' }, { status: 403 });
+    }
+
     const url = req.nextUrl;
     const from = url.searchParams.get('from');
     const to   = url.searchParams.get('to');
@@ -24,6 +33,17 @@ export async function GET(req: NextRequest) {
       if (to)   where.date.lte = startOfDay(new Date(to));
     }
     if (groupId) where.student = { groupId };
+
+    // O'qituvchi faqat o'z guruhlarini eksport qiladi
+    if (session.role === 'TEACHER') {
+      const myLessons = await prisma.lesson.findMany({
+        where: { teacherId: session.sub },
+        select: { groupId: true },
+        distinct: ['groupId'],
+      });
+      const ids = myLessons.map((l: { groupId: string }) => l.groupId);
+      where.student = { ...(where.student || {}), groupId: groupId && ids.includes(groupId) ? groupId : { in: ids } };
+    }
 
     const records = await prisma.attendance.findMany({
       where,
@@ -69,7 +89,7 @@ export async function GET(req: NextRequest) {
         time: r.checkInAt
           ? new Date(r.checkInAt).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })
           : '—',
-        method: r.method === 'face' ? 'Yuz' : 'Qoʻlda',
+        method: r.method === 'face' ? 'Yuz' : r.method === 'auto-absent' ? 'Avto' : 'Qoʻlda',
         confidence: r.confidence ? `${(r.confidence * 100).toFixed(1)}%` : '—',
         markedBy: r.markedBy?.fullName ?? '—',
       });

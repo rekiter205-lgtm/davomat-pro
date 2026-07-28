@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Clock, XCircle, TrendingUp, Calendar, Heart } from 'lucide-react';
-import { formatDateUz, formatTime, statusLabel, statusBadge, formatDateISO } from '@/lib/utils';
+import { formatDateUz, formatTime, statusLabel, statusBadge, formatDateISO, methodLabel } from '@/lib/utils';
 
 interface AttendanceRow {
   id: string;
@@ -211,7 +211,7 @@ export default function MyChildrenPage() {
                     <span className={`badge ${statusBadge(r.status)}`}>{statusLabel(r.status)}</span>
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-500">
-                    {r.method === 'face' ? '🎯 Yuz' : '✍️ Qoʻlda'}
+                    {methodLabel(r.method)}
                   </td>
                 </tr>
               ))

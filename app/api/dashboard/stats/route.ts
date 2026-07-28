@@ -34,7 +34,7 @@ export async function GET() {
 
     const [
       studentsCount, activeStudents, groupsCount, teachersCount,
-      todayPresent, todayLate, todayAbsent, todayAttendance, last7,
+      todayRows, weekRows,
     ] = await Promise.all([
       prisma.student.count({ where: studentWhere }),
       prisma.student.count({ where: { ...studentWhere, isActive: true } }),
@@ -46,26 +46,16 @@ export async function GET() {
       session.role === 'TEACHER'
         ? Promise.resolve(1)
         : prisma.user.count({ where: { role: 'TEACHER' } }),
-      prisma.attendance.count({
-        where: { ...attendanceWhere, date: today, status: 'PRESENT' },
-      }),
-      prisma.attendance.count({
-        where: { ...attendanceWhere, date: today, status: 'LATE' },
-      }),
-      prisma.attendance.count({
-        where: { ...attendanceWhere, date: today, status: 'ABSENT' },
-      }),
+      // Bugungi barcha yozuvlar — talaba bo'yicha guruhlash uchun
       prisma.attendance.findMany({
         where: { ...attendanceWhere, date: today },
-        include: {
+        select: {
+          studentId: true, status: true, checkInAt: true, confidence: true,
           student: { select: { fullName: true, photoUrl: true, group: { select: { name: true } } } },
         },
-        orderBy: { checkInAt: 'desc' },
-        take: 10,
       }),
-      // Last 7 days attendance trend
-      prisma.attendance.groupBy({
-        by: ['date', 'status'],
+      // So'nggi 7 kun — kunlik trend uchun
+      prisma.attendance.findMany({
         where: {
           ...attendanceWhere,
           date: {
@@ -73,11 +63,72 @@ export async function GET() {
             lte: today,
           },
         },
-        _count: { _all: true },
+        select: { studentId: true, date: true, status: true },
       }),
     ]);
 
-    // Build chart data: array of { date, present, late, absent }
+    // ── Kunlik status: talaba bo'yicha, dars bo'yicha emas ─────
+    // Davomat har DARS uchun yoziladi (kuniga 6 tagacha), shuning uchun
+    // yozuvlarni sanash "46 talaba / 63 keldi" kabi mantiqsizlik beradi.
+    // Har talabaga kun uchun BITTA status beramiz:
+    //   kech qolgan bo'lsa   → LATE   (kech qolish yashirilmaydi)
+    //   aks holda kelgan     → PRESENT
+    //   aks holda            → ABSENT
+    // Natijada uch raqam bir-birini istisno qiladi va yig'indisi
+    // talabalar sonidan oshmaydi.
+    type Day = 'PRESENT' | 'LATE' | 'ABSENT';
+    const dayStatusOf = (statuses: Iterable<string>): Day => {
+      let present = false;
+      for (const s of statuses) {
+        if (s === 'LATE') return 'LATE';
+        if (s === 'PRESENT') present = true;
+      }
+      return present ? 'PRESENT' : 'ABSENT';
+    };
+
+    // Bugun — har talaba uchun bitta qator
+    const perStudent = new Map<string, {
+      statuses: string[]; checkInAt: Date | null; confidence: number | null;
+      student: { fullName: string; photoUrl: string; group: { name: string } | null };
+    }>();
+    for (const r of todayRows) {
+      const cur = perStudent.get(r.studentId);
+      if (!cur) {
+        perStudent.set(r.studentId, {
+          statuses: [r.status], checkInAt: r.checkInAt,
+          confidence: r.confidence, student: r.student,
+        });
+        continue;
+      }
+      cur.statuses.push(r.status);
+      // Kun bo'yicha birinchi kelgan vaqtini saqlaymiz
+      if (r.checkInAt && (!cur.checkInAt || r.checkInAt < cur.checkInAt)) {
+        cur.checkInAt = r.checkInAt;
+        cur.confidence = r.confidence;
+      }
+    }
+
+    const todayAttendance = Array.from(perStudent.entries())
+      .map(([studentId, v]) => ({
+        id: studentId,
+        status: dayStatusOf(v.statuses),
+        checkInAt: v.checkInAt,
+        confidence: v.confidence,
+        student: v.student,
+      }))
+      // Eng oxirgi kelganlar tepada, kelmaganlar oxirida
+      .sort((a, b) => {
+        if (!a.checkInAt && !b.checkInAt) return 0;
+        if (!a.checkInAt) return 1;
+        if (!b.checkInAt) return -1;
+        return b.checkInAt.getTime() - a.checkInAt.getTime();
+      });
+
+    const todayPresent = todayAttendance.filter((r) => r.status === 'PRESENT').length;
+    const todayLate    = todayAttendance.filter((r) => r.status === 'LATE').length;
+    const todayAbsent  = todayAttendance.filter((r) => r.status === 'ABSENT').length;
+
+    // ── 7 kunlik trend — u ham talaba bo'yicha ─────────────────
     const dayMap = new Map<string, { date: string; present: number; late: number; absent: number }>();
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
@@ -85,13 +136,25 @@ export async function GET() {
       const key = toDateKey(d);
       dayMap.set(key, { date: key, present: 0, late: 0, absent: 0 });
     }
-    for (const row of last7) {
+    // (kun, talaba) → shu kundagi statuslar
+    const weekMap = new Map<string, Map<string, string[]>>();
+    for (const row of weekRows) {
       const key = toDateKey(new Date(row.date));
-      const entry = dayMap.get(key);
-      if (!entry) continue;
-      if (row.status === 'PRESENT') entry.present = row._count._all;
-      if (row.status === 'LATE')    entry.late    = row._count._all;
-      if (row.status === 'ABSENT')  entry.absent  = row._count._all;
+      if (!dayMap.has(key)) continue;
+      let students = weekMap.get(key);
+      if (!students) { students = new Map(); weekMap.set(key, students); }
+      const list = students.get(row.studentId);
+      if (list) list.push(row.status);
+      else students.set(row.studentId, [row.status]);
+    }
+    for (const [key, students] of weekMap) {
+      const entry = dayMap.get(key)!;
+      for (const statuses of students.values()) {
+        const s = dayStatusOf(statuses);
+        if (s === 'PRESENT') entry.present++;
+        else if (s === 'LATE') entry.late++;
+        else entry.absent++;
+      }
     }
     const chart = Array.from(dayMap.values());
 
@@ -104,7 +167,8 @@ export async function GET() {
         todayPresent,
         todayLate,
         todayAbsent,
-        todayTotal: todayPresent + todayLate,
+        // Bugun davomati belgilangan talabalar soni
+        todayTotal: todayAttendance.length,
       },
       todayAttendance,
       chart,

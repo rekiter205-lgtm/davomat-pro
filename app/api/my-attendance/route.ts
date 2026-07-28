@@ -22,10 +22,11 @@ interface AttendanceStats {
 
 function computeStats(records: { status: string }[]): AttendanceStats {
   const total = records.length;
-  const present = records.filter((r) => r.status === 'PRESENT' || r.status === 'LATE').length;
-  const late = 0;
+  const present = records.filter((r) => r.status === 'PRESENT').length;
+  const late = records.filter((r) => r.status === 'LATE').length;
   const absent = records.filter((r) => r.status === 'ABSENT').length;
-  const attendanceRate = total > 0 ? Math.round((present / total) * 100) : 0;
+  // Kech qolgan ham darsda bo'lgan — davomat foiziga kiradi
+  const attendanceRate = total > 0 ? Math.round(((present + late) / total) * 100) : 0;
   return { total, present, late, absent, attendanceRate };
 }
 

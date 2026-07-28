@@ -28,6 +28,10 @@ export default function AttendanceChart({ data }: { data: ChartDatum[] }) {
               <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
               <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
             </linearGradient>
+            <linearGradient id="grad-late" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.35} />
+              <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
+            </linearGradient>
             <linearGradient id="grad-absent" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.35} />
               <stop offset="100%" stopColor="#f43f5e" stopOpacity={0} />
@@ -57,6 +61,14 @@ export default function AttendanceChart({ data }: { data: ChartDatum[] }) {
             stroke="#10b981"
             strokeWidth={2}
             fill="url(#grad-present)"
+          />
+          <Area
+            type="monotone"
+            dataKey="late"
+            name="Kech qolganlar"
+            stroke="#f59e0b"
+            strokeWidth={2}
+            fill="url(#grad-late)"
           />
           <Area
             type="monotone"

@@ -59,24 +59,26 @@ export default function ReportsPage() {
   const totalRecords = rows.length;
 
   const byGroup = useMemo(() => {
-    const map = new Map<string, { name: string; present: number; late: number }>();
+    const map = new Map<string, { name: string; present: number; late: number; absent: number }>();
     rows.forEach((r) => {
       const key = r.student.group?.name ?? '— guruhsiz —';
-      const entry = map.get(key) || { name: key, present: 0, late: 0 };
+      const entry = map.get(key) || { name: key, present: 0, late: 0, absent: 0 };
       if (r.status === 'PRESENT') entry.present++;
       if (r.status === 'LATE') entry.late++;
+      if (r.status === 'ABSENT') entry.absent++;
       map.set(key, entry);
     });
     return Array.from(map.values());
   }, [rows]);
 
   const byDay = useMemo(() => {
-    const map = new Map<string, { date: string; present: number; late: number }>();
+    const map = new Map<string, { date: string; present: number; late: number; absent: number }>();
     rows.forEach((r) => {
       const key = formatDateISO(r.date);
-      const entry = map.get(key) || { date: key.slice(5), present: 0, late: 0 };
+      const entry = map.get(key) || { date: key.slice(5), present: 0, late: 0, absent: 0 };
       if (r.status === 'PRESENT') entry.present++;
       if (r.status === 'LATE') entry.late++;
+      if (r.status === 'ABSENT') entry.absent++;
       map.set(key, entry);
     });
     return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
@@ -85,6 +87,7 @@ export default function ReportsPage() {
   const pieData = [
     { name: 'Keldi', value: summary.PRESENT, key: 'PRESENT' },
     { name: 'Kech qoldi', value: summary.LATE, key: 'LATE' },
+    { name: 'Kelmadi', value: summary.ABSENT, key: 'ABSENT' },
   ];
 
   return (
@@ -129,7 +132,7 @@ export default function ReportsPage() {
       ) : (
         <>
           {/* Stat cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="card p-5">
               <div className="text-sm text-slate-500">Jami yozuvlar</div>
               <div className="text-3xl font-bold text-slate-900 dark:text-slate-50 mt-1">{totalRecords}</div>
@@ -146,6 +149,13 @@ export default function ReportsPage() {
               <div className="text-3xl font-bold text-amber-600 mt-1">{summary.LATE}</div>
               <div className="text-xs text-slate-400 mt-1">
                 {totalRecords > 0 ? ((summary.LATE / totalRecords) * 100).toFixed(1) : 0}% tarkib
+              </div>
+            </div>
+            <div className="card p-5">
+              <div className="text-sm text-slate-500">Kelmadi</div>
+              <div className="text-3xl font-bold text-rose-600 mt-1">{summary.ABSENT}</div>
+              <div className="text-xs text-slate-400 mt-1">
+                {totalRecords > 0 ? ((summary.ABSENT / totalRecords) * 100).toFixed(1) : 0}% tarkib
               </div>
             </div>
             <div className="card p-5">
@@ -169,9 +179,10 @@ export default function ReportsPage() {
                     <Tooltip
                       contentStyle={{ backgroundColor: 'rgb(15 23 42)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12 }}
                     />
-                    <Legend formatter={(v) => v === 'present' ? 'Keldi' : 'Kech'} wrapperStyle={{ fontSize: 12 }} />
+                    <Legend formatter={(v) => v === 'present' ? 'Keldi' : v === 'late' ? 'Kech' : 'Kelmadi'} wrapperStyle={{ fontSize: 12 }} />
                     <Bar dataKey="present" fill="#10b981" radius={[6, 6, 0, 0]} />
                     <Bar dataKey="late" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="absent" fill="#f43f5e" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -211,9 +222,10 @@ export default function ReportsPage() {
                   <Tooltip
                     contentStyle={{ backgroundColor: 'rgb(15 23 42)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12 }}
                   />
-                  <Legend formatter={(v) => v === 'present' ? 'Keldi' : 'Kech'} wrapperStyle={{ fontSize: 12 }} />
+                  <Legend formatter={(v) => v === 'present' ? 'Keldi' : v === 'late' ? 'Kech' : 'Kelmadi'} wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="present" stackId="a" fill="#10b981" />
                   <Bar dataKey="late" stackId="a" fill="#f59e0b" />
+                  <Bar dataKey="absent" stackId="a" fill="#f43f5e" />
                 </BarChart>
               </ResponsiveContainer>
             </div>

@@ -85,7 +85,9 @@ export async function GET(req: NextRequest) {
         markedBy: { select: { id: true, fullName: true } },
       },
       orderBy: [{ date: 'desc' }, { checkInAt: 'desc' }],
-      take: 500,
+      // Hisobotlar shu endpoint'dan 30 kunlik oraliqni oladi — past limit
+      // statistikani jimgina kesib, noto'g'ri raqam ko'rsatadi.
+      take: 5000,
     });
 
     return NextResponse.json({ attendance: records });
@@ -113,6 +115,21 @@ export async function POST(req: NextRequest) {
     }
     const { studentId, lessonId, status, date, notes } = parsed.data;
     const dateOnly = startOfDay(date ? new Date(date) : new Date());
+
+    // Dars va talaba mavjudligini hamda mosligini tekshirish —
+    // usiz FK xatosi 500 bo'lib qaytadi, o'qituvchi esa istalgan darsni belgilay olardi.
+    const [lesson, student] = await Promise.all([
+      prisma.lesson.findUnique({ where: { id: lessonId }, select: { teacherId: true, groupId: true } }),
+      prisma.student.findUnique({ where: { id: studentId }, select: { groupId: true } }),
+    ]);
+    if (!lesson) return NextResponse.json({ error: 'Dars topilmadi' }, { status: 404 });
+    if (!student) return NextResponse.json({ error: 'Talaba topilmadi' }, { status: 404 });
+    if (session.role === 'TEACHER' && lesson.teacherId !== session.sub) {
+      return NextResponse.json({ error: 'Bu dars sizga tegishli emas' }, { status: 403 });
+    }
+    if (student.groupId !== lesson.groupId) {
+      return NextResponse.json({ error: 'Talaba bu dars guruhida emas' }, { status: 400 });
+    }
 
     // Upsert by (studentId, date, lessonId)
     const record = await prisma.attendance.upsert({

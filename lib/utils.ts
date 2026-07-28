@@ -56,7 +56,7 @@ export function formatDateUz(d: Date | string): string {
 export function statusLabel(s: string): string {
   switch (s) {
     case 'PRESENT': return 'Keldi';
-    case 'LATE':    return 'Keldi';
+    case 'LATE':    return 'Kech qoldi';
     case 'ABSENT':  return 'Kelmadi';
     default:        return s;
   }
@@ -66,9 +66,18 @@ export function statusLabel(s: string): string {
 export function statusBadge(s: string): string {
   switch (s) {
     case 'PRESENT': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300';
-    case 'LATE':    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300';
+    case 'LATE':    return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
     case 'ABSENT':  return 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300';
     default:        return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+  }
+}
+
+/** Attendance method → UI label. 'auto-absent' ni "Qo'lda" deb ko'rsatish xato. */
+export function methodLabel(m: string): string {
+  switch (m) {
+    case 'face':        return '🎯 Yuz';
+    case 'auto-absent': return '🤖 Avto';
+    default:            return '✍️ Qoʻlda';
   }
 }
 

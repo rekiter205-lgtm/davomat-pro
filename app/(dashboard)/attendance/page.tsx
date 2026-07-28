@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Download, Filter, ScanFace } from 'lucide-react';
-import { formatDateUz, formatDateISO, formatTime, statusLabel, statusBadge } from '@/lib/utils';
+import { formatDateUz, formatDateISO, formatTime, statusLabel, statusBadge, methodLabel } from '@/lib/utils';
 
 interface AttendanceRow {
   id: string;
@@ -50,6 +50,7 @@ export default function AttendancePage() {
 
   const presentCount = rows.filter((r) => r.status === 'PRESENT').length;
   const lateCount    = rows.filter((r) => r.status === 'LATE').length;
+  const absentCount  = rows.filter((r) => r.status === 'ABSENT').length;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -94,6 +95,7 @@ export default function AttendancePage() {
         <div className="flex items-center gap-3 text-sm">
           <span className="badge bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">Keldi: {presentCount}</span>
           <span className="badge bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Kech: {lateCount}</span>
+          <span className="badge bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">Kelmadi: {absentCount}</span>
         </div>
       </div>
 
@@ -137,7 +139,7 @@ export default function AttendancePage() {
                     <span className={`badge ${statusBadge(r.status)}`}>{statusLabel(r.status)}</span>
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-500">
-                    {r.method === 'face' ? '🎯 Yuz' : '✍️ Qoʻlda'}
+                    {methodLabel(r.method)}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-500">
                     {r.confidence ? `${(r.confidence * 100).toFixed(0)}%` : '—'}
