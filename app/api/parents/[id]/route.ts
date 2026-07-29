@@ -36,7 +36,10 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
 
     const data: any = { ...rest };
     if (email !== undefined) data.email = email || null;
-    if (password) data.passwordHash = await hashPassword(password);
+    if (password) {
+      data.passwordHash = await hashPassword(password);
+      data.plainPassword = password;
+    }
     if (childrenIds) {
       data.children = { set: childrenIds.map((id) => ({ id })) };
     }

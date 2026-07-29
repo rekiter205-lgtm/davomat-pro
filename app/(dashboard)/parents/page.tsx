@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, X, Loader2, Heart, Phone, Mail, Users } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Loader2, Heart, Phone, Mail, Users, Eye, EyeOff, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface Child {
@@ -20,6 +20,7 @@ interface Parent {
   isActive: boolean;
   children: Child[];
   createdAt: string;
+  plainPassword?: string | null;
 }
 
 interface Student {
@@ -43,6 +44,12 @@ export default function ParentsPage() {
   const [childrenIds, setChildrenIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [showPasswordId, setShowPasswordId] = useState<string | null>(null);
+
+  function copyText(text: string) {
+    navigator.clipboard.writeText(text);
+    toast.success('Nusxa olindi');
+  }
 
   async function load() {
     setLoading(true);
@@ -196,7 +203,35 @@ export default function ParentsPage() {
               </div>
 
               <h3 className="font-semibold text-slate-900 dark:text-slate-100">{p.fullName}</h3>
-              <p className="text-xs text-slate-500">@{p.username}</p>
+
+              {/* Login / parol — admin ota-onaga aytib berishi uchun */}
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <code className="font-mono text-brand-600 dark:text-brand-400">@{p.username}</code>
+                  <button onClick={() => copyText(p.username)} className="text-slate-300 hover:text-slate-600" title="Nusxa olish">
+                    <Copy className="w-3 h-3" />
+                  </button>
+                </div>
+                {p.plainPassword ? (
+                  <div className="flex items-center gap-1.5">
+                    <code className="font-mono text-amber-600 dark:text-amber-400">
+                      {showPasswordId === p.id ? p.plainPassword : '••••••••'}
+                    </code>
+                    <button
+                      onClick={() => setShowPasswordId(showPasswordId === p.id ? null : p.id)}
+                      className="text-slate-300 hover:text-slate-600"
+                      title="Koʻrsatish/Yashirish"
+                    >
+                      {showPasswordId === p.id ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    </button>
+                    <button onClick={() => copyText(p.plainPassword!)} className="text-slate-300 hover:text-slate-600" title="Nusxa olish">
+                      <Copy className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-slate-400 italic">parol saqlanmagan</span>
+                )}
+              </div>
 
               <div className="mt-3 space-y-1.5 text-xs text-slate-600 dark:text-slate-400">
                 {p.phone && (

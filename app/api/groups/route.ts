@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
+import { visibleGroupIds } from '@/lib/scope';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,17 +17,10 @@ export async function GET() {
     const session = await getCurrentUser();
     if (!session) return NextResponse.json({ error: 'Avtorizatsiya' }, { status: 401 });
 
-    // Teacher: only groups where they have lessons
-    let where = {};
-    if (session.role === 'TEACHER') {
-      const myLessons = await prisma.lesson.findMany({
-        where: { teacherId: session.sub },
-        select: { groupId: true },
-        distinct: ['groupId'],
-      });
-      const ids = myLessons.map((l: { groupId: string }) => l.groupId);
-      where = { id: { in: ids } };
-    }
+    // ADMIN — hammasi. TEACHER — o'zi dars beradigan sinflar.
+    // STUDENT — o'z sinfi, PARENT — farzandlari sinflari.
+    const ids = await visibleGroupIds(session);
+    const where = ids === null ? {} : { id: { in: ids } };
 
     const groups = await prisma.group.findMany({
       where,

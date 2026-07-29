@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { isValidDescriptor } from '@/lib/face-utils';
 import { getCurrentUser } from '@/lib/auth';
+import { visibleGroupIds, visibleStudentIds } from '@/lib/scope';
 import { audit } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
@@ -26,14 +27,15 @@ export async function GET(req: NextRequest) {
     const search = req.nextUrl.searchParams.get('search') || undefined;
 
     // ── Role-based scoping ─────────────────────────────────────
+    // STUDENT/PARENT — faqat o'zi / farzandlari. TEACHER — o'z guruhlari.
+    const myStudentIds = await visibleStudentIds(session);
+    if (myStudentIds && myStudentIds.length === 0) {
+      return NextResponse.json({ students: [] });
+    }
+
     let groupFilter: any = groupId ? { groupId } : {};
-    if (session.role === 'TEACHER') {
-      const myLessons = await prisma.lesson.findMany({
-        where: { teacherId: session.sub },
-        select: { groupId: true },
-        distinct: ['groupId'],
-      });
-      const myGroupIds = myLessons.map((l: { groupId: string }) => l.groupId);
+    if (!myStudentIds && session.role === 'TEACHER') {
+      const myGroupIds = (await visibleGroupIds(session)) || [];
 
       if (groupId) {
         // Filtering by a specific group: ensure it's one of theirs
@@ -50,6 +52,7 @@ export async function GET(req: NextRequest) {
       where: {
         isActive: true,
         ...groupFilter,
+        ...(myStudentIds ? { id: { in: myStudentIds } } : {}),
         ...(search ? { fullName: { contains: search, mode: 'insensitive' } } : {}),
       },
       include: {

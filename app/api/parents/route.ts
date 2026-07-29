@@ -31,6 +31,9 @@ export async function GET() {
       select: {
         id: true, username: true, fullName: true, email: true, phone: true,
         isActive: true, createdAt: true,
+        // plainPassword — admin ota-onaga login/parolini qayta aytib bera olishi uchun
+        // (bu route allaqachon faqat ADMIN'ga ochiq)
+        plainPassword: true,
         children: {
           select: {
             id: true, fullName: true, photoUrl: true,
@@ -76,6 +79,7 @@ export async function POST(req: NextRequest) {
         phone: phone || null,
         email: email || null,
         passwordHash: await hashPassword(password),
+        plainPassword: password,
         role: 'PARENT',
         children: childrenIds.length
           ? { connect: childrenIds.map((id) => ({ id })) }
