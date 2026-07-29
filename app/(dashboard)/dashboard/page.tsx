@@ -6,7 +6,7 @@ import {
   Users, GraduationCap, UserCheck, UserX, Clock, ScanFace, ArrowRight, X,
 } from 'lucide-react';
 import AttendanceChart from '@/components/AttendanceChart';
-import { formatTime, statusBadge, statusLabel } from '@/lib/utils';
+import { formatDateUz, formatTime, statusBadge, statusLabel } from '@/lib/utils';
 
 interface Stats {
   students: number;
@@ -30,7 +30,10 @@ interface AttendanceRow {
 type StatusFilter = 'PRESENT' | 'LATE' | 'ABSENT';
 
 export default function DashboardPage() {
-  const [data, setData] = useState<{ stats: Stats; todayAttendance: AttendanceRow[]; chart: any[] } | null>(null);
+  const [data, setData] = useState<{
+    stats: Stats; todayAttendance: AttendanceRow[]; chart: any[];
+    referenceDate?: string; isToday?: boolean;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<StatusFilter | null>(null);
 
@@ -52,14 +55,20 @@ export default function DashboardPage() {
     { label: isTeacher ? 'Mening guruhlarim'  : 'Guruhlar',  value: data.stats.groups,         icon: GraduationCap, color: 'from-violet-500 to-violet-600', href: '/groups' },
   ];
 
+  // Raqamlar qaysi kunga tegishli. Bugunga yozuv bo'lmasa server oxirgi
+  // ma'lumotli kunni qaytaradi — yorliq ham shuni aytishi kerak.
+  const dayLabel = data.isToday === false && data.referenceDate
+    ? formatDateUz(data.referenceDate + 'T00:00:00')
+    : 'Bugun';
+
   // Bosilganda pastdagi ro'yxatni shu status bo'yicha filtrlaydi
   const statusCards: Array<{
     status: StatusFilter; label: string; value: number;
     icon: typeof UserCheck; color: string; ring: string;
   }> = [
-    { status: 'PRESENT', label: 'Bugun keldi',      value: data.stats.todayPresent, icon: UserCheck, color: 'from-emerald-500 to-emerald-600', ring: 'ring-emerald-500' },
-    { status: 'LATE',    label: 'Bugun kech qoldi', value: data.stats.todayLate,    icon: Clock,     color: 'from-amber-500 to-amber-600',     ring: 'ring-amber-500' },
-    { status: 'ABSENT',  label: 'Bugun kelmadi',    value: data.stats.todayAbsent,  icon: UserX,     color: 'from-rose-500 to-rose-600',       ring: 'ring-rose-500' },
+    { status: 'PRESENT', label: `${dayLabel} keldi`,      value: data.stats.todayPresent, icon: UserCheck, color: 'from-emerald-500 to-emerald-600', ring: 'ring-emerald-500' },
+    { status: 'LATE',    label: `${dayLabel} kech qoldi`, value: data.stats.todayLate,    icon: Clock,     color: 'from-amber-500 to-amber-600',     ring: 'ring-amber-500' },
+    { status: 'ABSENT',  label: `${dayLabel} kelmadi`,    value: data.stats.todayAbsent,  icon: UserX,     color: 'from-rose-500 to-rose-600',       ring: 'ring-rose-500' },
   ];
 
   const totalToday = data.stats.todayPresent + data.stats.todayLate + data.stats.todayAbsent;
@@ -115,7 +124,7 @@ export default function DashboardPage() {
               type="button"
               onClick={() => setFilter(active ? null : c.status)}
               aria-pressed={active}
-              title={active ? 'Filtrni bekor qilish' : `Faqat "${c.label.replace('Bugun ', '')}" boʻlganlar`}
+              title={active ? 'Filtrni bekor qilish' : `Faqat "${c.label.replace(dayLabel + ' ', '')}" boʻlganlar`}
               className={`card p-5 text-left hover:shadow-md transition-all ${
                 active ? `ring-2 ${c.ring} shadow-md` : 'hover:-translate-y-0.5'
               }`}
@@ -150,7 +159,7 @@ export default function DashboardPage() {
         <div className="card p-5">
           <div className="flex items-start justify-between gap-2 mb-1">
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">
-              {activeCard ? activeCard.label.replace('Bugun ', 'Bugun ') : 'Bugungi davomat'}
+              {activeCard ? activeCard.label : `${dayLabel} davomati`}
             </h2>
             {filter && (
               <button
@@ -170,7 +179,7 @@ export default function DashboardPage() {
 
           {totalToday === 0 ? (
             <div className="text-sm text-slate-400 text-center py-8">
-              Bugun hali davomat yozuvlari yoʻq
+              {dayLabel === 'Bugun' ? 'Bugun hali davomat yozuvlari yoʻq' : 'Davomat yozuvlari yoʻq'}
             </div>
           ) : visibleRows.length === 0 ? (
             <div className="text-sm text-slate-400 text-center py-8">

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Clock, XCircle, TrendingUp, Calendar, Heart } from 'lucide-react';
-import { formatDateUz, formatTime, statusLabel, statusBadge, formatDateISO, methodLabel } from '@/lib/utils';
+import { formatDateUz, formatTime, statusLabel, statusBadge, methodLabel } from '@/lib/utils';
+import { useDefaultRange } from '@/lib/use-attendance-range';
 
 interface AttendanceRow {
   id: string;
@@ -28,18 +29,24 @@ interface ChildData {
 }
 
 export default function MyChildrenPage() {
-  const today = new Date();
-  const monthAgo = new Date(today);
-  monthAgo.setDate(today.getDate() - 29);
+  const defaultRange = useDefaultRange();
 
-  const [from, setFrom] = useState(formatDateISO(monthAgo));
-  const [to, setTo] = useState(formatDateISO(today));
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [selectedChild, setSelectedChild] = useState<string>('');
   const [children, setChildren] = useState<ChildData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Standart oraliq aniqlangach maydonlarga qo'yamiz (bir marta).
   useEffect(() => {
+    if (!defaultRange) return;
+    setFrom((v) => v || defaultRange.from);
+    setTo((v) => v || defaultRange.to);
+  }, [defaultRange]);
+
+  useEffect(() => {
+    if (!from || !to) return;
     setLoading(true);
     setError(null);
     fetch(`/api/my-attendance?from=${from}&to=${to}`)

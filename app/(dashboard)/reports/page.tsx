@@ -8,6 +8,7 @@ import {
   Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { formatDateISO, statusLabel } from '@/lib/utils';
+import { useDefaultRange } from '@/lib/use-attendance-range';
 
 interface AttendanceRow {
   id: string;
@@ -33,14 +34,13 @@ function ReportsPageInner() {
   const router = useRouter();
   const params = useSearchParams();
 
-  const today = new Date();
-  const monthAgo = new Date(today);
-  monthAgo.setDate(today.getDate() - 29);
+  const defaultRange = useDefaultRange();
 
   // Filtrlar URL'da — hisobotni havola bilan ulashish va sahifani
   // yangilaganda oraliqni qaytadan terib o'tirmaslik uchun.
-  const [from, setFrom] = useState(() => dateParam(params.get('from'), formatDateISO(monthAgo)));
-  const [to, setTo] = useState(() => dateParam(params.get('to'), formatDateISO(today)));
+  // URL'da sana bo'lmasa — standart oraliq (ma'lumot bor davr) qo'yiladi.
+  const [from, setFrom] = useState(() => dateParam(params.get('from'), ''));
+  const [to, setTo] = useState(() => dateParam(params.get('to'), ''));
   const [groupId, setGroupId] = useState(() => params.get('groupId') || '');
   const [groups, setGroups] = useState<Group[]>([]);
   const [rows, setRows] = useState<AttendanceRow[]>([]);
@@ -51,12 +51,20 @@ function ReportsPageInner() {
   }, []);
 
   useEffect(() => {
+    if (!defaultRange) return;
+    setFrom((v) => v || defaultRange.from);
+    setTo((v) => v || defaultRange.to);
+  }, [defaultRange]);
+
+  useEffect(() => {
+    if (!from || !to) return;
     const qs = new URLSearchParams({ from, to });
     if (groupId) qs.set('groupId', groupId);
     router.replace(`/reports?${qs.toString()}`, { scroll: false });
   }, [from, to, groupId, router]);
 
   useEffect(() => {
+    if (!from || !to) return;
     setLoading(true);
     const qs = new URLSearchParams({ from, to });
     if (groupId) qs.set('groupId', groupId);

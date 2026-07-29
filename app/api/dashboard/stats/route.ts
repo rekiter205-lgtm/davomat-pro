@@ -39,6 +39,17 @@ export async function GET() {
     }
     // ADMIN — no restriction
 
+    // Ko'rsatiladigan kun: odatda bugun. Bugunga yozuv bo'lmasa (ta'til,
+    // dam olish kuni, o'quv yili tugagan) oxirgi ma'lumotli kunga tushamiz,
+    // aks holda bosh sahifa butunlay bo'sh ko'rinadi.
+    const latest = await prisma.attendance.findFirst({
+      where: { ...attendanceWhere, date: { lte: today } },
+      orderBy: { date: 'desc' },
+      select: { date: true },
+    });
+    const refDate = latest ? startOfDay(latest.date) : today;
+    const isToday = refDate.getTime() === today.getTime();
+
     const [
       studentsCount, activeStudents, groupsCount, teachersCount,
       todayRows, weekRows,
@@ -55,7 +66,7 @@ export async function GET() {
         : prisma.user.count({ where: { role: 'TEACHER' } }),
       // Bugungi barcha yozuvlar — talaba bo'yicha guruhlash uchun
       prisma.attendance.findMany({
-        where: { ...attendanceWhere, date: today },
+        where: { ...attendanceWhere, date: refDate },
         select: {
           studentId: true, status: true, checkInAt: true, confidence: true,
           student: { select: { fullName: true, photoUrl: true, group: { select: { name: true } } } },
@@ -66,8 +77,8 @@ export async function GET() {
         where: {
           ...attendanceWhere,
           date: {
-            gte: new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000),
-            lte: today,
+            gte: new Date(refDate.getTime() - 6 * 24 * 60 * 60 * 1000),
+            lte: refDate,
           },
         },
         select: { studentId: true, date: true, status: true },
@@ -138,8 +149,8 @@ export async function GET() {
     // ── 7 kunlik trend — u ham talaba bo'yicha ─────────────────
     const dayMap = new Map<string, { date: string; present: number; late: number; absent: number }>();
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
+      const d = new Date(refDate);
+      d.setDate(refDate.getDate() - i);
       const key = toDateKey(d);
       dayMap.set(key, { date: key, present: 0, late: 0, absent: 0 });
     }
@@ -179,6 +190,9 @@ export async function GET() {
       },
       todayAttendance,
       chart,
+      // Raqamlar qaysi kunga tegishli — bugun bo'lmasligi mumkin
+      referenceDate: toDateKey(refDate),
+      isToday,
       role: session.role, // help frontend hide/show admin-only labels
     });
   } catch (err) {
