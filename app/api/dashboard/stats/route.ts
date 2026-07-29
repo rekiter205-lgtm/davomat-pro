@@ -10,6 +10,13 @@ export async function GET() {
     const session = await getCurrentUser();
     if (!session) return NextResponse.json({ error: 'Avtorizatsiya' }, { status: 401 });
 
+    // Bu endpoint butun maktab kesimidagi agregatlarni va bugungi yo'qlama
+    // ro'yxatini (ism, rasm, sinf) qaytaradi — faqat xodimlar uchun.
+    // O'quvchi/ota-ona o'z ma'lumotini /api/my-attendance dan oladi.
+    if (session.role !== 'ADMIN' && session.role !== 'TEACHER') {
+      return NextResponse.json({ error: 'Ruxsat yoʻq' }, { status: 403 });
+    }
+
     const today = startOfDay(new Date());
 
     // ── Build role-based filters ───────────────────────────────
