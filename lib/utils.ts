@@ -125,37 +125,46 @@ export function isLessonDay(date: Date | string, lessonDays: string): boolean {
 }
 
 /**
- * Period attendance status:
- *   - "before"   : current time < startTime (kamera hali ochilmagan)
- *   - "open"     : startTime <= now <= startTime + windowMinutes (kamera ochiq)
- *   - "closed"   : now > startTime + windowMinutes (kamera o'chgan)
- *   - "ended"    : now > endTime (dars umuman tugagan)
+ * Yo'qlama holati — sessiya (o'qituvchi "ochish"ni bosgan payt) asosida:
+ *   - "before" : dars hali boshlanmagan — ochib bo'lmaydi
+ *   - "ready"  : dars ketyapti, yo'qlama hali ochilmagan — ochish mumkin
+ *   - "open"   : ochilgan, closesAt hali kelmagan — kamera ishlaydi
+ *   - "closed" : ochilgan edi, vaqti tugadi — qayta ochib bo'lmaydi
+ *   - "ended"  : dars tugadi, yo'qlama umuman ochilmadi — endi ochib bo'lmaydi
  */
-export type PeriodStatus = 'before' | 'open' | 'closed' | 'ended';
+export type AttendanceState = 'before' | 'ready' | 'open' | 'closed' | 'ended';
 
-export function periodStatus(
+export interface AttendanceSessionInfo {
+  openedAt: string | Date;
+  closesAt: string | Date;
+}
+
+export function attendanceState(
   now: Date,
-  startTime: string,    // "HH:mm"
+  startTime: string, // "HH:mm"
   endTime: string,
-  windowMinutes: number = 5,
-): { status: PeriodStatus; secondsLeft: number; secondsToStart: number } {
+  session: AttendanceSessionInfo | null | undefined,
+): { status: AttendanceState; secondsLeft: number; secondsToStart: number } {
+  if (session) {
+    const closesAt = new Date(session.closesAt);
+    const secondsLeft = Math.max(0, Math.floor((closesAt.getTime() - now.getTime()) / 1000));
+    return now < closesAt
+      ? { status: 'open', secondsLeft, secondsToStart: 0 }
+      : { status: 'closed', secondsLeft: 0, secondsToStart: 0 };
+  }
+
   const [sh, sm] = startTime.split(':').map(Number);
   const [eh, em] = endTime.split(':').map(Number);
 
   const start = new Date(now);
   start.setHours(sh, sm, 0, 0);
-
   const end = new Date(now);
   end.setHours(eh, em, 0, 0);
 
-  const windowEnd = new Date(start.getTime() + windowMinutes * 60 * 1000);
-
   const secondsToStart = Math.max(0, Math.floor((start.getTime() - now.getTime()) / 1000));
-  const secondsLeft = Math.max(0, Math.floor((windowEnd.getTime() - now.getTime()) / 1000));
 
-  if (now < start)        return { status: 'before', secondsLeft: 0, secondsToStart };
-  if (now <= windowEnd)   return { status: 'open',   secondsLeft, secondsToStart: 0 };
-  if (now <= end)         return { status: 'closed', secondsLeft: 0, secondsToStart: 0 };
+  if (now < start) return { status: 'before', secondsLeft: 0, secondsToStart };
+  if (now <= end) return { status: 'ready', secondsLeft: 0, secondsToStart: 0 };
   return { status: 'ended', secondsLeft: 0, secondsToStart: 0 };
 }
 

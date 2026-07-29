@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
-import { dayCodeOf } from '@/lib/utils';
+import { dayCodeOf, startOfDay } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +63,25 @@ export async function GET(req: NextRequest) {
       },
       orderBy: [{ dayOfWeek: 'asc' }, { period: { number: 'asc' } }],
     });
+
+    // Bugungi darslar uchun ochilgan yo'qlama sessiyasini ham qo'shamiz
+    if (today && lessons.length > 0) {
+      const sessions = await prisma.attendanceSession.findMany({
+        where: {
+          date: startOfDay(new Date()),
+          lessonId: { in: lessons.map((l: { id: string }) => l.id) },
+        },
+        select: { lessonId: true, openedAt: true, closesAt: true },
+      });
+      const byLesson = new Map(sessions.map((s: typeof sessions[number]) => [s.lessonId, s]));
+      return NextResponse.json({
+        lessons: lessons.map((l: typeof lessons[number]) => ({
+          ...l,
+          session: byLesson.get(l.id) ?? null,
+        })),
+      });
+    }
+
     return NextResponse.json({ lessons });
   } catch (err) {
     console.error('GET /api/lessons:', err);

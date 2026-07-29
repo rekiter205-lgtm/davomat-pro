@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
-import { startOfDay, dayCodeOf, periodStatus } from '@/lib/utils';
+import { startOfDay, dayCodeOf } from '@/lib/utils';
 import { audit } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
@@ -50,21 +50,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Bu dars bugun emas' }, { status: 403 });
     }
 
-    // Window'dan keyingi vaqtda ishlashi kerak
-    const status = periodStatus(
-      now,
-      lesson.period.startTime,
-      lesson.period.endTime,
-      lesson.attendanceWindowMinutes,
-    );
-    if (status.status === 'before' || status.status === 'open') {
-      return NextResponse.json(
-        { error: 'Yoʻqlama oynasi hali ochiq' },
-        { status: 403 },
-      );
-    }
-
     const today = startOfDay(now);
+
+    // Faqat yo'qlama oynasi yopilgandan keyin ishlaydi:
+    //  - sessiya ochilgan bo'lsa — closesAt o'tishi kerak
+    //  - umuman ochilmagan bo'lsa — dars tugashi kerak
+    const attSession = await prisma.attendanceSession.findUnique({
+      where: { lessonId_date: { lessonId: lesson.id, date: today } },
+    });
+    if (attSession) {
+      if (now < attSession.closesAt) {
+        return NextResponse.json({ error: 'Yoʻqlama oynasi hali ochiq' }, { status: 403 });
+      }
+    } else {
+      const [eh, em] = lesson.period.endTime.split(':').map(Number);
+      const end = new Date(now);
+      end.setHours(eh, em, 0, 0);
+      if (now <= end) {
+        return NextResponse.json(
+          { error: 'Dars hali tugamagan — yoʻqlama ochilishi mumkin' },
+          { status: 403 },
+        );
+      }
+    }
 
     // Bugun bu darsda yozuvi bor talabalar
     const existing = await prisma.attendance.findMany({
@@ -81,7 +89,17 @@ export async function POST(req: NextRequest) {
 
     const toMark = students.filter((s: { id: string }) => !markedIds.has(s.id));
 
+    const markFinalized = async () => {
+      if (attSession && !attSession.finalizedAt) {
+        await prisma.attendanceSession.update({
+          where: { id: attSession.id },
+          data: { finalizedAt: now },
+        });
+      }
+    };
+
     if (toMark.length === 0) {
+      await markFinalized();
       return NextResponse.json({ added: 0, message: 'Hamma talabalar belgilangan' });
     }
 
@@ -96,6 +114,8 @@ export async function POST(req: NextRequest) {
       })),
       skipDuplicates: true,
     });
+
+    await markFinalized();
 
     audit({
       action: 'attendance.finalize',

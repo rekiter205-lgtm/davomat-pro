@@ -3,10 +3,15 @@
 import { useCallback, useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { CheckCircle2, AlertTriangle, XCircle, Clock, BookOpen, Loader2, ArrowLeft } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, Clock, BookOpen, Loader2, ArrowLeft, ScanFace, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import FaceScanner from '@/components/FaceScanner';
-import { statusLabel, statusBadge, formatTime, dayCodeOf, periodStatus, formatCountdown, toDateKey } from '@/lib/utils';
+import { statusLabel, statusBadge, formatTime, attendanceState, formatCountdown, toDateKey } from '@/lib/utils';
+
+interface AttSession {
+  openedAt: string;
+  closesAt: string;
+}
 
 interface Lesson {
   id: string;
@@ -16,6 +21,7 @@ interface Lesson {
   group: { id: string; name: string };
   teacher: { id: string; fullName: string };
   period: { id: string; number: number; name: string; startTime: string; endTime: string };
+  session?: AttSession | null;
 }
 
 interface RecognizeResponse {
@@ -50,6 +56,8 @@ function ScanContent() {
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(new Date());
   const [finalized, setFinalized] = useState(false);
+  const [attSession, setAttSession] = useState<AttSession | null>(null);
+  const [opening, setOpening] = useState(false);
 
   const cooldownRef = useRef<Map<string, number>>(new Map());
   const finalizeRef = useRef<boolean>(false);
@@ -66,21 +74,49 @@ function ScanContent() {
       setLoading(false);
       return;
     }
-    fetch('/api/lessons?today=1')
-      .then((r) => r.json())
-      .then((d) => {
-        const found = (d.lessons || []).find((l: Lesson) => l.id === lessonId);
+    Promise.all([
+      fetch('/api/lessons?today=1').then((r) => r.json()),
+      fetch(`/api/attendance/session?lessonId=${lessonId}`).then((r) => r.json()),
+    ])
+      .then(([lessonData, sessionData]) => {
+        const found = (lessonData.lessons || []).find((l: Lesson) => l.id === lessonId);
         setLesson(found || null);
+        setAttSession(sessionData.session ?? null);
       })
       .finally(() => setLoading(false));
   }, [lessonId]);
 
   const ps = lesson
-    ? periodStatus(now, lesson.period.startTime, lesson.period.endTime, lesson.attendanceWindowMinutes)
+    ? attendanceState(now, lesson.period.startTime, lesson.period.endTime, attSession)
     : null;
 
   const isOpen = ps?.status === 'open';
+  const isReady = ps?.status === 'ready';
   const isClosed = ps?.status === 'closed' || ps?.status === 'ended';
+
+  const openAttendance = useCallback(async () => {
+    if (!lesson) return;
+    setOpening(true);
+    try {
+      const res = await fetch('/api/attendance/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lessonId: lesson.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Yoʻqlamani ochib boʻlmadi');
+        if (data.session) setAttSession(data.session); // allaqachon ochilgan
+        return;
+      }
+      setAttSession(data.session);
+      toast.success(`Kamera ${lesson.attendanceWindowMinutes} daqiqaga ochildi`);
+    } catch {
+      toast.error('Tarmoq xatosi');
+    } finally {
+      setOpening(false);
+    }
+  }, [lesson]);
 
   // Auto-finalize when window closes
   useEffect(() => {
@@ -197,6 +233,25 @@ function ScanContent() {
         </div>
       )}
 
+      {isReady && (
+        <div className="card p-4 flex flex-col sm:flex-row sm:items-center gap-3 bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30">
+          <Lock className="w-5 h-5 text-amber-600" />
+          <div className="flex-1">
+            <div className="text-sm font-medium text-amber-900 dark:text-amber-200">
+              Yoʻqlama hali ochilmagan
+            </div>
+            <div className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+              Boshlaganingizdan keyin kamera {lesson.attendanceWindowMinutes} daqiqa ochiq turadi.
+              Vaqt tugagach qayta ochib boʻlmaydi.
+            </div>
+          </div>
+          <button onClick={openAttendance} disabled={opening} className="btn-primary">
+            {opening ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanFace className="w-4 h-4" />}
+            Yoʻqlamani boshlash
+          </button>
+        </div>
+      )}
+
       {isOpen && (
         <div className="card p-4 flex items-center gap-3 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 animate-pulse" />
@@ -216,7 +271,9 @@ function ScanContent() {
           <XCircle className="w-5 h-5 text-slate-500" />
           <div className="flex-1">
             <div className="text-sm font-medium text-slate-700 dark:text-slate-200">
-              Yoʻqlama yopildi
+              {ps?.status === 'closed'
+                ? 'Yoʻqlama yopildi — qayta ochib boʻlmaydi'
+                : 'Dars tugadi — yoʻqlama ochilmadi'}
             </div>
             <div className="text-xs text-slate-500 mt-0.5">
               {finalized
@@ -234,7 +291,7 @@ function ScanContent() {
       )}
 
       {/* Camera + recent */}
-      {(isOpen || ps?.status === 'before') && (
+      {(isOpen || isReady || ps?.status === 'before') && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             {isOpen ? (
@@ -244,6 +301,17 @@ function ScanContent() {
                 continuous
                 intervalMs={2000}
               />
+            ) : isReady ? (
+              <div className="card p-16 text-center bg-slate-100 dark:bg-slate-800">
+                <ScanFace className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+                <p className="text-slate-500">
+                  Kamera oʻchiq — yoʻqlamani boshlaganingizda yonadi
+                </p>
+                <button onClick={openAttendance} disabled={opening} className="btn-primary mt-4">
+                  {opening ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanFace className="w-4 h-4" />}
+                  Yoʻqlamani boshlash
+                </button>
+              </div>
             ) : (
               <div className="card p-16 text-center bg-slate-100 dark:bg-slate-800">
                 <Clock className="w-12 h-12 text-slate-400 mx-auto mb-3" />

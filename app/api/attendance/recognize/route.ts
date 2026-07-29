@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { prisma } from '@/lib/prisma';
 import { findBestMatch, type MatchCandidate, isValidDescriptor } from '@/lib/face-utils';
-import { startOfDay, dayCodeOf, periodStatus } from '@/lib/utils';
+import { startOfDay, dayCodeOf } from '@/lib/utils';
 import { getCurrentUser } from '@/lib/auth';
 import { notifyAttendance } from '@/lib/notifications';
 
@@ -53,20 +53,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Bu dars bugun emas` }, { status: 403 });
     }
 
-    const status = periodStatus(
-      now,
-      lesson.period.startTime,
-      lesson.period.endTime,
-      lesson.attendanceWindowMinutes,
-    );
+    // Yo'qlama sessiyasi — kamera faqat ochiq sessiyada ishlaydi
+    const today = startOfDay(now);
+    const scanSession = await prisma.attendanceSession.findUnique({
+      where: { lessonId_date: { lessonId: lesson.id, date: today } },
+    });
 
-    if (status.status === 'before') {
-      return NextResponse.json(
-        { error: `Dars hali boshlanmagan (${lesson.period.startTime})` },
-        { status: 403 },
-      );
+    if (!scanSession) {
+      return NextResponse.json({ error: 'Yoʻqlama ochilmagan' }, { status: 403 });
     }
-    if (status.status === 'closed' || status.status === 'ended') {
+    if (now >= scanSession.closesAt) {
       return NextResponse.json(
         { error: `Yoʻqlama yopilgan. Kamera ${lesson.attendanceWindowMinutes} daqiqa ochiq edi.` },
         { status: 403 },
@@ -105,7 +101,6 @@ export async function POST(req: NextRequest) {
     }
 
     const matchedStudent = students.find((s: typeof students[number]) => s.id === match.studentId)!;
-    const today = startOfDay(now);
 
     const existing = await prisma.attendance.findFirst({
       where: { studentId: match.studentId, date: today, lessonId: lesson.id },

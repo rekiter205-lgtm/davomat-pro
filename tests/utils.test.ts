@@ -4,7 +4,7 @@ import {
   startOfDay,
   dayCodeOf,
   parseLessonDays,
-  periodStatus,
+  attendanceState,
   formatCountdown,
 } from '@/lib/utils';
 
@@ -41,20 +41,33 @@ describe('parseLessonDays', () => {
   });
 });
 
-describe('periodStatus', () => {
+describe('attendanceState', () => {
   const at = (h: number, m: number) => new Date(2026, 6, 1, h, m, 0, 0);
+  const openedAtSession = (h: number, m: number, windowMin = 5) => ({
+    openedAt: at(h, m),
+    closesAt: new Date(at(h, m).getTime() + windowMin * 60_000),
+  });
 
-  it('is "before" prior to start', () => {
-    expect(periodStatus(at(7, 59), '08:00', '08:45', 5).status).toBe('before');
+  it('is "before" prior to start when not opened', () => {
+    expect(attendanceState(at(7, 59), '08:00', '08:45', null).status).toBe('before');
   });
-  it('is "open" inside the attendance window', () => {
-    expect(periodStatus(at(8, 3), '08:00', '08:45', 5).status).toBe('open');
+  it('is "ready" during the lesson while not opened', () => {
+    expect(attendanceState(at(8, 20), '08:00', '08:45', null).status).toBe('ready');
   });
-  it('is "closed" after the window but before end', () => {
-    expect(periodStatus(at(8, 20), '08:00', '08:45', 5).status).toBe('closed');
+  it('is "ended" after the lesson if never opened', () => {
+    expect(attendanceState(at(9, 0), '08:00', '08:45', null).status).toBe('ended');
   });
-  it('is "ended" after the end time', () => {
-    expect(periodStatus(at(9, 0), '08:00', '08:45', 5).status).toBe('ended');
+
+  it('is "open" for the window that starts when the teacher opened it', () => {
+    const s = attendanceState(at(8, 22), '08:00', '08:45', openedAtSession(8, 20));
+    expect(s.status).toBe('open');
+    expect(s.secondsLeft).toBe(180);
+  });
+  it('is "closed" once the 5 minutes are up — even mid-lesson', () => {
+    expect(attendanceState(at(8, 26), '08:00', '08:45', openedAtSession(8, 20)).status).toBe('closed');
+  });
+  it('stays "closed" after the lesson ends — no re-opening', () => {
+    expect(attendanceState(at(10, 0), '08:00', '08:45', openedAtSession(8, 20)).status).toBe('closed');
   });
 });
 

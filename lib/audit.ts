@@ -20,6 +20,7 @@ export type AuditAction =
   | 'user.update'
   | 'user.delete'
   | 'attendance.manual_mark'
+  | 'attendance.session_open'
   | 'attendance.finalize';
 
 export interface AuditEntry {

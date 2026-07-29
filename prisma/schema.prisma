@@ -41,6 +41,7 @@ model User {
 
   lessons          Lesson[]      @relation("TeacherLessons")
   attendanceMarked Attendance[]  @relation("MarkedBy")
+  sessionsOpened   AttendanceSession[] @relation("OpenedBy")
   studentProfile   Student?      @relation("StudentUser")
   children         Student[]     @relation("ParentChildren")
 
@@ -109,6 +110,7 @@ model Lesson {
   updatedAt DateTime @updatedAt
 
   attendance Attendance[]
+  sessions   AttendanceSession[]
 
   // Bir guruhda bir kunda bir parada faqat bitta dars bo'lishi mumkin
   @@unique([groupId, dayOfWeek, periodId])
@@ -200,6 +202,30 @@ model Attendance {
   @@index([studentId])
   @@index([lessonId])
   @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Attendance session — o'qituvchi yo'qlamani ochgan payt.
+// Kamera faqat shu yozuv bor va closesAt hali o'tmagan bo'lsa ishlaydi.
+// lessonId × date unique — bir kunda bir darsni ikkinchi marta ochib bo'lmaydi.
+// ─────────────────────────────────────────────────────────────
+model AttendanceSession {
+  id String @id @default(cuid())
+
+  lessonId String
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  date     DateTime // kun boshi (startOfDay)
+  openedAt DateTime @default(now())
+  closesAt DateTime // openedAt + attendanceWindowMinutes
+
+  openedById String?
+  openedBy   User?   @relation("OpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
+
+  finalizedAt DateTime?
+
+  @@unique([lessonId, date])
+  @@index([date])
 }
 
 model Setting {

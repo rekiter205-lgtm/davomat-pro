@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Clock, BookOpen, Users, ScanFace, Lock, Check, AlertCircle } from 'lucide-react';
-import { dayCodeOf, DAY_LABELS_UZ_FULL, periodStatus, formatCountdown, toDateKey } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
+import { Clock, BookOpen, Users, ScanFace, Lock, Check, AlertCircle, Loader2 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { dayCodeOf, DAY_LABELS_UZ_FULL, attendanceState, formatCountdown, toDateKey } from '@/lib/utils';
 
 interface Lesson {
   id: string;
@@ -11,6 +13,7 @@ interface Lesson {
   group: { id: string; name: string };
   period: { id: string; number: number; name: string; startTime: string; endTime: string };
   attendanceWindowMinutes: number;
+  session: { openedAt: string; closesAt: string } | null;
 }
 
 export default function TodayPage() {
@@ -26,6 +29,17 @@ export default function TodayPage() {
       .then((r) => r.json())
       .then((d) => setLessons(d.lessons || []))
       .finally(() => setLoading(false));
+  }, []);
+
+  // Boshqa qurilmadan ochilgan bo'lsa ham holat yangilanib tursin
+  useEffect(() => {
+    const t = setInterval(() => {
+      fetch('/api/lessons?today=1')
+        .then((r) => r.json())
+        .then((d) => setLessons(d.lessons || []))
+        .catch(() => {});
+    }, 30_000);
+    return () => clearInterval(t);
   }, []);
 
   // Update "now" every second for countdowns
@@ -62,7 +76,7 @@ export default function TodayPage() {
       ) : (
         <div className="space-y-3">
           {lessons.map((l) => {
-            const ps = periodStatus(now, l.period.startTime, l.period.endTime, l.attendanceWindowMinutes);
+            const ps = attendanceState(now, l.period.startTime, l.period.endTime, l.session);
             return <LessonCard key={l.id} lesson={l} status={ps} />;
           })}
         </div>
@@ -76,11 +90,38 @@ function LessonCard({
   status,
 }: {
   lesson: Lesson;
-  status: ReturnType<typeof periodStatus>;
+  status: ReturnType<typeof attendanceState>;
 }) {
+  const router = useRouter();
+  const [opening, setOpening] = useState(false);
+
   const isOpen = status.status === 'open';
   const isBefore = status.status === 'before';
+  const isReady = status.status === 'ready';
   const isClosed = status.status === 'closed' || status.status === 'ended';
+
+  async function openAttendance() {
+    setOpening(true);
+    try {
+      const res = await fetch('/api/attendance/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lessonId: lesson.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Yoʻqlamani ochib boʻlmadi');
+        if (res.status === 409) router.refresh();
+        return;
+      }
+      toast.success(`Kamera ${lesson.attendanceWindowMinutes} daqiqaga ochildi`);
+      router.push(`/attendance/scan?lessonId=${lesson.id}`);
+    } catch {
+      toast.error('Tarmoq xatosi');
+    } finally {
+      setOpening(false);
+    }
+  }
 
   return (
     <div className={`card p-5 transition-all ${
@@ -130,6 +171,16 @@ function LessonCard({
             </div>
           )}
 
+          {isReady && (
+            <button onClick={openAttendance} disabled={opening} className="btn-primary">
+              {opening ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanFace className="w-4 h-4" />}
+              <span>Yoʻqlamani boshlash</span>
+              <span className="ml-1 text-xs opacity-90">
+                ({lesson.attendanceWindowMinutes} daq.)
+              </span>
+            </button>
+          )}
+
           {isOpen && (
             <Link
               href={`/attendance/scan?lessonId=${lesson.id}`}
@@ -146,8 +197,10 @@ function LessonCard({
           {isClosed && (
             <div className="text-right">
               <div className="flex items-center gap-2 text-sm text-slate-500">
-                <Check className="w-4 h-4" />
-                <span>Yoʻqlama tugagan</span>
+                {status.status === 'closed' ? <Check className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                <span>
+                  {status.status === 'closed' ? 'Yoʻqlama tugagan' : 'Yoʻqlama olinmadi'}
+                </span>
               </div>
               <Link
                 href={`/attendance?date=${toDateKey(new Date())}&groupId=${lesson.group.id}`}
