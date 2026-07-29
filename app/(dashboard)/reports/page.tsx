@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Download, FileBarChart, Calendar } from 'lucide-react';
 import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
@@ -23,14 +24,24 @@ const STATUS_COLORS: Record<string, string> = {
   ABSENT: '#f43f5e',
 };
 
-export default function ReportsPage() {
+/** URL'dan kelgan sana faqat `YYYY-MM-DD` ko'rinishida qabul qilinadi. */
+function dateParam(v: string | null, fallback: string): string {
+  return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : fallback;
+}
+
+function ReportsPageInner() {
+  const router = useRouter();
+  const params = useSearchParams();
+
   const today = new Date();
   const monthAgo = new Date(today);
   monthAgo.setDate(today.getDate() - 29);
 
-  const [from, setFrom] = useState(formatDateISO(monthAgo));
-  const [to, setTo] = useState(formatDateISO(today));
-  const [groupId, setGroupId] = useState('');
+  // Filtrlar URL'da — hisobotni havola bilan ulashish va sahifani
+  // yangilaganda oraliqni qaytadan terib o'tirmaslik uchun.
+  const [from, setFrom] = useState(() => dateParam(params.get('from'), formatDateISO(monthAgo)));
+  const [to, setTo] = useState(() => dateParam(params.get('to'), formatDateISO(today)));
+  const [groupId, setGroupId] = useState(() => params.get('groupId') || '');
   const [groups, setGroups] = useState<Group[]>([]);
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,6 +49,12 @@ export default function ReportsPage() {
   useEffect(() => {
     fetch('/api/groups').then(r => r.json()).then(d => setGroups(d.groups || []));
   }, []);
+
+  useEffect(() => {
+    const qs = new URLSearchParams({ from, to });
+    if (groupId) qs.set('groupId', groupId);
+    router.replace(`/reports?${qs.toString()}`, { scroll: false });
+  }, [from, to, groupId, router]);
 
   useEffect(() => {
     setLoading(true);
@@ -233,5 +250,14 @@ export default function ReportsPage() {
         </>
       )}
     </div>
+  );
+}
+
+// useSearchParams prerender paytida Suspense chegarasini talab qiladi.
+export default function ReportsPage() {
+  return (
+    <Suspense fallback={<div className="text-center py-16 text-slate-400">Yuklanmoqda...</div>}>
+      <ReportsPageInner />
+    </Suspense>
   );
 }
