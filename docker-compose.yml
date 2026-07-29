@@ -50,6 +50,24 @@ services:
       - davomat_uploads:/app/public/uploads
       - davomat_models:/app/public/models
 
+  # HTTPS tunnel — telefondan yo'qlama qilish uchun.
+  # Brauzer kamerani faqat xavfsiz kontekstda (HTTPS yoki localhost) beradi,
+  # shuning uchun http://192.168.x.x:3001 da FaceScanner ishlamaydi.
+  #
+  #   docker compose --profile tunnel up -d
+  #   docker compose logs tunnel | grep trycloudflare.com
+  #
+  # Chiqqan https://... manzilini telefonda oching. Manzil har safar
+  # yangidan beriladi (Cloudflare quick tunnel, akkaunt talab qilmaydi).
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: davomat-tunnel
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    depends_on:
+      - app
+    command: tunnel --no-autoupdate --url http://app:3000
+
 volumes:
   davomat_pgdata:
   davomat_uploads:

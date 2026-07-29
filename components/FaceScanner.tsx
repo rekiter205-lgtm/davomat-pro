@@ -6,6 +6,15 @@ import { loadFaceModels, detectSingleFace, descriptorToArray } from '@/ai/face-r
 
 const DEVICE_STORAGE_KEY = 'faceScanner.deviceId';
 
+/**
+ * Telefon/planshetmi? Sensorli qurilmada o'qituvchi qurilmani o'quvchiga
+ * qaratadi — orqa kamera kerak. Noutbukda esa yagona kamera old kamera.
+ */
+function prefersBackCamera(): boolean {
+  if (typeof window === 'undefined') return false;
+  return navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches;
+}
+
 interface FaceScannerProps {
   /** Called whenever a face is detected & a 128-d descriptor extracted. */
   onDescriptor?: (descriptor: number[]) => void | Promise<void>;
@@ -70,10 +79,15 @@ export default function FaceScanner({
   const startCamera = useCallback(async () => {
     try {
       setError(null);
-      // Tanlangan qurilma bo'lsa — o'shani, aks holda old kamerani ishlatamiz
+      // Tanlangan qurilma bo'lsa — o'shani. Aks holda telefonda orqa,
+      // kompyuterda old kamera. `ideal` — mos kamera bo'lmasa xato bermaydi.
       const video: MediaTrackConstraints = deviceId
         ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
-        : { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' };
+        : {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            facingMode: prefersBackCamera() ? { ideal: 'environment' } : 'user',
+          };
       const stream = await navigator.mediaDevices.getUserMedia({ video });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
