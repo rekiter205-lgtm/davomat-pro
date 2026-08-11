@@ -2,10 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { prisma } from '@/lib/prisma';
-import { findBestMatch, type MatchCandidate, isValidDescriptor } from '@/lib/face-utils';
+import {
+  findBestMatch,
+  normalizeDescriptors,
+  type MatchCandidate,
+  isValidDescriptor,
+} from '@/lib/face-utils';
 import { startOfDay, dayCodeOf } from '@/lib/utils';
 import { getCurrentUser } from '@/lib/auth';
 import { notifyAttendance } from '@/lib/notifications';
+import { env } from '@/lib/env';
+import { rateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +28,21 @@ export async function POST(req: NextRequest) {
 
     if (session.role !== 'ADMIN' && session.role !== 'TEACHER') {
       return NextResponse.json({ error: 'Ruxsat yoʻq' }, { status: 403 });
+    }
+
+    // Har bir so'rov guruhning barcha deskriptorlarini o'qib, 128 o'lchovli
+    // taqqoslash qiladi. Kalit IP emas, foydalanuvchi bo'yicha — maktabda
+    // hamma o'qituvchi bitta tashqi IP ortida bo'lishi mumkin.
+    const rl = rateLimit(
+      `recognize:${session.sub}`,
+      env.RECOGNIZE_RATE_LIMIT,
+      env.RECOGNIZE_RATE_WINDOW_SEC,
+    );
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: `Juda koʻp skanerlash. ${rl.retryAfterSec} soniyadan soʻng davom etadi.` },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } },
+      );
     }
 
     const body = await req.json();
@@ -78,14 +100,16 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // normalizeDescriptors eski (bitta massiv) va yangi (bir nechta namuna)
+    // yozuvlarni bir xil ko'rinishga keltiradi — bazani ko'chirish shart emas.
     const candidates: MatchCandidate[] = students
-      .filter((s: typeof students[number]) => isValidDescriptor(s.faceDescriptor as unknown))
       .map((s: typeof students[number]) => ({
         studentId: s.id,
         fullName: s.fullName,
         groupId: s.groupId,
-        descriptor: s.faceDescriptor as unknown as number[],
-      }));
+        descriptors: normalizeDescriptors(s.faceDescriptor as unknown),
+      }))
+      .filter((c: MatchCandidate) => c.descriptors.length > 0);
 
     if (candidates.length === 0) {
       return NextResponse.json(

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { prisma } from '@/lib/prisma';
-import { isValidDescriptor } from '@/lib/face-utils';
+import { normalizeDescriptors } from '@/lib/face-utils';
+import { faceDescriptorInput } from '@/lib/face-schema';
 import { getCurrentUser } from '@/lib/auth';
 import { visibleGroupIds, visibleStudentIds } from '@/lib/scope';
 import { audit } from '@/lib/audit';
@@ -15,7 +16,7 @@ const createSchema = z.object({
   parentPhone: z.string().optional().nullable(),
   groupId: z.string().optional().nullable(),
   photoUrl: z.string().min(1, 'Rasm yuklash shart'),
-  faceDescriptor: z.array(z.number()).length(128).optional(),
+  faceDescriptor: faceDescriptorInput.optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -62,10 +63,10 @@ export async function GET(req: NextRequest) {
     });
 
     // Strip large faceDescriptor from list response — saves bandwidth.
-    const slim = (students as any[]).map(({ faceDescriptor, ...rest }: any) => ({
-      ...rest,
-      hasFaceData: faceDescriptor !== null,
-    }));
+    const slim = (students as any[]).map(({ faceDescriptor, ...rest }: any) => {
+      const samples = normalizeDescriptors(faceDescriptor);
+      return { ...rest, hasFaceData: samples.length > 0, faceSampleCount: samples.length };
+    });
 
     return NextResponse.json({ students: slim });
   } catch (err) {
@@ -90,7 +91,9 @@ export async function POST(req: NextRequest) {
     }
     const data = parsed.data;
 
-    if (data.faceDescriptor && !isValidDescriptor(data.faceDescriptor)) {
+    // Bazaga har doim namunalar ro'yxati (number[][]) sifatida yoziladi.
+    const faceSamples = data.faceDescriptor ? normalizeDescriptors(data.faceDescriptor) : null;
+    if (data.faceDescriptor && (!faceSamples || faceSamples.length === 0)) {
       return NextResponse.json({ error: 'Yuz maʼlumotlari yaroqsiz' }, { status: 400 });
     }
 
@@ -101,7 +104,7 @@ export async function POST(req: NextRequest) {
         parentPhone: data.parentPhone || null,
         photoUrl: data.photoUrl,
         groupId: data.groupId || null,
-        faceDescriptor: data.faceDescriptor ?? undefined,
+        faceDescriptor: faceSamples ?? undefined,
       },
       include: { group: { select: { id: true, name: true } } },
     });

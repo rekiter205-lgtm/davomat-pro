@@ -4,6 +4,7 @@ import {
   cosineSimilarity,
   findBestMatch,
   isValidDescriptor,
+  normalizeDescriptors,
   type MatchCandidate,
 } from '@/lib/face-utils';
 
@@ -57,10 +58,41 @@ describe('isValidDescriptor', () => {
   });
 });
 
+describe('normalizeDescriptors', () => {
+  it('wraps a legacy single descriptor', () => {
+    const out = normalizeDescriptors(vec(0.5));
+    expect(out).toHaveLength(1);
+    expect(out[0]).toEqual(vec(0.5));
+  });
+
+  it('passes through a list of descriptors', () => {
+    expect(normalizeDescriptors([vec(0.1), vec(0.2), vec(0.3)])).toHaveLength(3);
+  });
+
+  it('drops invalid samples but keeps the good ones', () => {
+    // Bitta buzuq namuna butun o'quvchini yo'qotib qo'ymasligi kerak.
+    const out = normalizeDescriptors([vec(0.1), 'junk', vec(0.2).slice(0, 50), vec(0.3)]);
+    expect(out).toHaveLength(2);
+  });
+
+  it('returns an empty list for null / non-arrays', () => {
+    expect(normalizeDescriptors(null)).toEqual([]);
+    expect(normalizeDescriptors(undefined)).toEqual([]);
+    expect(normalizeDescriptors({ a: 1 })).toEqual([]);
+    expect(normalizeDescriptors('nope')).toEqual([]);
+  });
+
+  it('does not confuse the two shapes', () => {
+    // 128 ta namunali ro'yxat eski bitta deskriptor deb o'qilmasligi kerak.
+    const many = Array.from({ length: 128 }, (_, i) => vec(i / 1000));
+    expect(normalizeDescriptors(many)).toHaveLength(128);
+  });
+});
+
 describe('findBestMatch', () => {
   const candidates: MatchCandidate[] = [
-    { studentId: 'a', fullName: 'A', groupId: 'g', descriptor: vec(0.0) },
-    { studentId: 'b', fullName: 'B', groupId: 'g', descriptor: vec(1.0) },
+    { studentId: 'a', fullName: 'A', groupId: 'g', descriptors: [vec(0.0)] },
+    { studentId: 'b', fullName: 'B', groupId: 'g', descriptors: [vec(1.0)] },
   ];
 
   it('returns null when there are no candidates', () => {
@@ -77,5 +109,30 @@ describe('findBestMatch', () => {
     // probe is far from both (distance ~ sqrt(128 * 0.25) ≈ 5.6)
     const m = findBestMatch(vec(0.5), candidates, 0.55);
     expect(m).toBeNull();
+  });
+
+  it('matches on the closest of several samples', () => {
+    // Ro'yxatga olishdagi birinchi rakurs mos kelmasa ham, ikkinchisi topadi.
+    const multi: MatchCandidate[] = [
+      { studentId: 'a', fullName: 'A', groupId: 'g', descriptors: [vec(1.0), vec(0.0)] },
+    ];
+    const m = findBestMatch(vec(0.001), multi, 0.55);
+    expect(m?.studentId).toBe('a');
+    expect(m?.distance).toBeLessThan(0.1);
+  });
+
+  it('ignores a candidate with no samples', () => {
+    const empty: MatchCandidate[] = [
+      { studentId: 'a', fullName: 'A', groupId: 'g', descriptors: [] },
+    ];
+    expect(findBestMatch(vec(0.0), empty, 0.55)).toBeNull();
+  });
+
+  it('prefers the student whose best sample is closest', () => {
+    const two: MatchCandidate[] = [
+      { studentId: 'a', fullName: 'A', groupId: 'g', descriptors: [vec(0.30), vec(0.20)] },
+      { studentId: 'b', fullName: 'B', groupId: 'g', descriptors: [vec(0.25), vec(0.001)] },
+    ];
+    expect(findBestMatch(vec(0.0), two, 0.55)?.studentId).toBe('b');
   });
 });

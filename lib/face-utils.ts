@@ -37,11 +37,22 @@ export function cosineSimilarity(a: FaceDescriptor, b: FaceDescriptor): number {
   return denom === 0 ? 0 : dot / denom;
 }
 
+/**
+ * Bitta o'quvchi uchun saqlanadigan eng ko'p yuz namunasi.
+ *
+ * Har bir namuna alohida taqqoslanadi, ya'ni N ta namuna guruhdagi
+ * taqqoslashlar sonini N barobar oshiradi. 5 ta — turli yorug'lik va
+ * rakursni qoplash uchun yetarli, lekin yo'qlama tezligiga sezilarli
+ * ta'sir qilmaydi.
+ */
+export const MAX_FACE_SAMPLES = 5;
+
 export interface MatchCandidate {
   studentId: string;
   fullName: string;
   groupId: string | null;
-  descriptor: FaceDescriptor;
+  /** Bir nechta rakurs/yorug'likdagi namunalar — kamida bittasi mos kelsa yetarli. */
+  descriptors: FaceDescriptor[];
 }
 
 export interface MatchResult {
@@ -54,6 +65,10 @@ export interface MatchResult {
 
 /**
  * Find the best matching candidate for a probe descriptor.
+ *
+ * O'quvchining har bir namunasi alohida taqqoslanadi va eng yaqini olinadi:
+ * bitta rakursda o'xshamasa, boshqasida topilishi mumkin.
+ *
  * @param threshold maximum euclidean distance to consider a match (default 0.55)
  */
 export function findBestMatch(
@@ -65,15 +80,17 @@ export function findBestMatch(
 
   let best: MatchResult | null = null;
   for (const c of candidates) {
-    const distance = euclideanDistance(probe, c.descriptor);
-    if (!best || distance < best.distance) {
-      best = {
-        studentId: c.studentId,
-        fullName: c.fullName,
-        groupId: c.groupId,
-        distance,
-        confidence: Math.max(0, Math.min(1, 1 - distance)),
-      };
+    for (const descriptor of c.descriptors) {
+      const distance = euclideanDistance(probe, descriptor);
+      if (!best || distance < best.distance) {
+        best = {
+          studentId: c.studentId,
+          fullName: c.fullName,
+          groupId: c.groupId,
+          distance,
+          confidence: Math.max(0, Math.min(1, 1 - distance)),
+        };
+      }
     }
   }
   return best && best.distance <= threshold ? best : null;
@@ -86,4 +103,21 @@ export function isValidDescriptor(d: unknown): d is FaceDescriptor {
     d.length === 128 &&
     d.every((v) => typeof v === 'number' && Number.isFinite(v))
   );
+}
+
+/**
+ * Bazadagi `faceDescriptor` qiymatini namunalar ro'yxatiga keltiradi.
+ *
+ * Ikki shakl bo'lishi mumkin va ikkalasi ham qo'llab-quvvatlanadi:
+ *   • eski yozuvlar — bitta deskriptor:      `number[128]`
+ *   • yangi yozuvlar — bir nechta namuna:    `number[][]`
+ *
+ * Ikki shakl chalkashmaydi: birinchisining elementlari son, ikkinchisiniki
+ * massiv. Yaroqsiz namunalar jimgina tashlab yuboriladi — bitta buzuq
+ * yozuv butun o'quvchini tanib bo'lmaydigan qilib qo'ymasligi kerak.
+ */
+export function normalizeDescriptors(raw: unknown): FaceDescriptor[] {
+  if (!Array.isArray(raw)) return [];
+  if (isValidDescriptor(raw)) return [raw];
+  return raw.filter(isValidDescriptor);
 }

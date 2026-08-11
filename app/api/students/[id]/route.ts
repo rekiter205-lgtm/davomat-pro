@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { prisma } from '@/lib/prisma';
-import { isValidDescriptor } from '@/lib/face-utils';
+import { normalizeDescriptors } from '@/lib/face-utils';
+import { faceDescriptorInput } from '@/lib/face-schema';
 import { getCurrentUser } from '@/lib/auth';
 import { audit } from '@/lib/audit';
 
@@ -14,7 +15,7 @@ const updateSchema = z.object({
   parentPhone: z.string().optional().nullable(),
   groupId: z.string().optional().nullable(),
   photoUrl: z.string().optional(),
-  faceDescriptor: z.array(z.number()).length(128).optional().nullable(),
+  faceDescriptor: faceDescriptorInput.optional().nullable(),
   isActive: z.boolean().optional(),
 });
 
@@ -51,7 +52,10 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
   if (!student) return NextResponse.json({ error: 'Topilmadi' }, { status: 404 });
   // strip descriptor from response
   const { faceDescriptor, ...rest } = student;
-  return NextResponse.json({ student: { ...rest, hasFaceData: faceDescriptor !== null } });
+  const samples = normalizeDescriptors(faceDescriptor as unknown);
+  return NextResponse.json({
+    student: { ...rest, hasFaceData: samples.length > 0, faceSampleCount: samples.length },
+  });
 }
 
 export async function PUT(req: NextRequest, { params }: Ctx) {
@@ -69,7 +73,9 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
       );
     }
     const data = parsed.data;
-    if (data.faceDescriptor && !isValidDescriptor(data.faceDescriptor)) {
+    // Bazaga har doim namunalar ro'yxati (number[][]) sifatida yoziladi.
+    const faceSamples = data.faceDescriptor ? normalizeDescriptors(data.faceDescriptor) : null;
+    if (data.faceDescriptor && (!faceSamples || faceSamples.length === 0)) {
       return NextResponse.json({ error: 'Yuz maʼlumotlari yaroqsiz' }, { status: 400 });
     }
 
@@ -81,7 +87,8 @@ export async function PUT(req: NextRequest, { params }: Ctx) {
         ...(data.parentPhone !== undefined && { parentPhone: data.parentPhone }),
         ...(data.groupId !== undefined && { groupId: data.groupId }),
         ...(data.photoUrl !== undefined && { photoUrl: data.photoUrl }),
-        ...(data.faceDescriptor !== undefined && { faceDescriptor: data.faceDescriptor ?? undefined }),
+        // null kelsa — o'zgartirmaymiz (avvalgi xulq shunday edi).
+        ...(faceSamples !== null && { faceDescriptor: faceSamples }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
       },
       include: { group: { select: { id: true, name: true } } },
