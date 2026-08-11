@@ -5,11 +5,19 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: davomat
-      POSTGRES_PASSWORD: davomat
+      # `:?` — o'rnatilmagan bo'lsa compose ishga tushmaydi. Parol faqat
+      # baza birinchi marta yaratilganda qo'llaniladi; keyin o'zgartirish
+      # uchun `ALTER USER davomat WITH PASSWORD '...'` kerak.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env da belgilanishi shart}
       POSTGRES_DB: davomat_pro
       TZ: ${TZ:-Asia/Tashkent}
-    ports:
-      - "5432:5432"
+    # Port ataylab host'ga chiqarilmagan: `app` bazaga docker tarmog'i orqali
+    # (db:5432) ulanadi, tashqi port kerak emas. Bazaga qo'lda kirish uchun:
+    #   docker compose exec db psql -U davomat -d davomat_pro
+    # Vaqtincha host'dan kerak bo'lsa (masalan Prisma Studio), quyidagini
+    # yoqing — faqat localhost, hech qachon 0.0.0.0 emas:
+    #   ports:
+    #     - "127.0.0.1:15432:5432"
     volumes:
       - davomat_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -33,9 +41,12 @@ services:
       # Dars vaqtlari ("08:00") server local vaqtida hisoblanadi — TZ mos
       # bo'lmasa yo'qlama oynasi noto'g'ri soatda ochiladi.
       TZ: ${TZ:-Asia/Tashkent}
-      DATABASE_URL: postgresql://davomat:davomat@db:5432/davomat_pro?schema=public
-      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-string-min-32-characters}
+      DATABASE_URL: postgresql://davomat:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD .env da belgilanishi shart}@db:5432/davomat_pro?schema=public
+      # Standart qiymat yo'q — bo'sh bo'lsa deploy to'xtaydi. Yaratish:
+      #   openssl rand -base64 32
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET .env da belgilanishi shart (kamida 32 belgi)}
       JWT_EXPIRES_IN: 7d
+      NODE_ENV: production
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3001}
       MAX_UPLOAD_SIZE_MB: 5
       FACE_MATCH_THRESHOLD: "0.55"
@@ -44,6 +55,10 @@ services:
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       SMS_PROVIDER_EMAIL: ${SMS_PROVIDER_EMAIL:-}
       SMS_PROVIDER_PASSWORD: ${SMS_PROVIDER_PASSWORD:-}
+      LOGIN_RATE_LIMIT: ${LOGIN_RATE_LIMIT:-10}
+      LOGIN_RATE_WINDOW_SEC: ${LOGIN_RATE_WINDOW_SEC:-60}
+      RECOGNIZE_RATE_LIMIT: ${RECOGNIZE_RATE_LIMIT:-90}
+      RECOGNIZE_RATE_WINDOW_SEC: ${RECOGNIZE_RATE_WINDOW_SEC:-60}
     ports:
       - "3001:3000"
     volumes:

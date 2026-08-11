@@ -3,6 +3,10 @@
  * Run with: npx tsx prisma/seed.ts
  *
  * Idempotent — qayta ishga tushirilganda xato bermaydi
+ *
+ * DIQQAT: bu **demo** ma'lumotlar — o'ylab topilgan o'quvchilar, jadval va
+ * yo'qlama tarixi, hammasi oson topiladigan parollar bilan. Haqiqiy bazada
+ * admin yaratish uchun `npm run admin:create` ishlating.
  */
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
@@ -18,6 +22,35 @@ const Role = {
 };
 
 const prisma = new PrismaClient();
+
+/**
+ * Demo parollar. Har biri env orqali almashtiriladi, lekin baribir demo
+ * akkauntlar — bulardan haqiqiy maktabda foydalanmang.
+ */
+const DEMO_PASSWORD = {
+  admin: process.env.SEED_ADMIN_PASSWORD || 'admin123',
+  teacher: process.env.SEED_TEACHER_PASSWORD || 'teacher123',
+  student: process.env.SEED_STUDENT_PASSWORD || 'student123',
+  parent: process.env.SEED_PARENT_PASSWORD || 'parent123',
+};
+
+/**
+ * Production bazaga demo o'quvchilar va oson parollar quyilib ketmasligi
+ * uchun to'siq. Pitch/demo stendi ataylab production rejimda ishlayotgan
+ * bo'lsa, ALLOW_DEMO_SEED=1 bilan ochiladi.
+ */
+function assertSeedAllowed() {
+  if (process.env.NODE_ENV !== 'production') return;
+  if (process.env.ALLOW_DEMO_SEED === '1') {
+    console.warn('⚠️   NODE_ENV=production, lekin ALLOW_DEMO_SEED=1 — demo maʼlumotlar yozilmoqda.');
+    return;
+  }
+  throw new Error(
+    'Demo seed production rejimida bloklandi.\n' +
+      '  • Haqiqiy admin yaratish uchun:  npm run admin:create\n' +
+      '  • Bu baribir demo stend boʻlsa:   ALLOW_DEMO_SEED=1 npm run seed',
+  );
+}
 
 // Deterministik pseudo-random (mulberry32) — seed har safar bir xil tarix beradi
 function mulberry32(a: number) {
@@ -51,10 +84,11 @@ function makeAvatar(fullName: string, color: string): string {
 }
 
 async function main() {
+  assertSeedAllowed();
   console.log('🌱  Seeding database...');
 
   // ── 1. Admin ────────────────────────────────────────────
-  const adminPwd = await bcrypt.hash('admin123', 10);
+  const adminPwd = await bcrypt.hash(DEMO_PASSWORD.admin, 10);
   await prisma.user.upsert({
     where: { username: 'admin' },
     update: {},
@@ -62,14 +96,14 @@ async function main() {
       username: 'admin',
       fullName: 'Bosh administrator',
       passwordHash: adminPwd,
-      plainPassword: 'admin123',
+      plainPassword: DEMO_PASSWORD.admin,
       role: Role.ADMIN,
     },
   });
-  console.log('✓  Admin: admin / admin123');
+  console.log(`✓  Admin: admin / ${DEMO_PASSWORD.admin}`);
 
   // ── 2. Teachers ─────────────────────────────────────────
-  const teacherPwd = await bcrypt.hash('teacher123', 10);
+  const teacherPwd = await bcrypt.hash(DEMO_PASSWORD.teacher, 10);
   const teacher1 = await prisma.user.upsert({
     where: { username: 'aliyev' },
     update: {},
@@ -78,7 +112,7 @@ async function main() {
       fullName: 'Aliyev Sardor',
       phone: '+998901234567',
       passwordHash: teacherPwd,
-      plainPassword: 'teacher123',
+      plainPassword: DEMO_PASSWORD.teacher,
       role: Role.TEACHER,
     },
   });
@@ -90,11 +124,11 @@ async function main() {
       fullName: 'Karimova Dilnoza',
       phone: '+998907654321',
       passwordHash: teacherPwd,
-      plainPassword: 'teacher123',
+      plainPassword: DEMO_PASSWORD.teacher,
       role: Role.TEACHER,
     },
   });
-  console.log('✓  Teachers: aliyev, karimova / teacher123');
+  console.log(`✓  Teachers: aliyev, karimova / ${DEMO_PASSWORD.teacher}`);
 
   // ── 3. Periods (Paralar) ────────────────────────────────
   const periodData = [
@@ -282,8 +316,8 @@ async function main() {
     create: {
       username: 'oquvchi',
       fullName: 'Rustamov Jasur',
-      passwordHash: await bcrypt.hash('student123', 10),
-      plainPassword: 'student123',
+      passwordHash: await bcrypt.hash(DEMO_PASSWORD.student, 10),
+      plainPassword: DEMO_PASSWORD.student,
       role: Role.STUDENT,
     },
   });
@@ -300,8 +334,8 @@ async function main() {
       username: 'otaona',
       fullName: 'Rustamov Akmal',
       phone: '+998901112233',
-      passwordHash: await bcrypt.hash('parent123', 10),
-      plainPassword: 'parent123',
+      passwordHash: await bcrypt.hash(DEMO_PASSWORD.parent, 10),
+      plainPassword: DEMO_PASSWORD.parent,
       role: Role.PARENT,
     },
   });
@@ -309,7 +343,7 @@ async function main() {
     where: { id: parentUser.id },
     data: { children: { connect: [{ id: students[0].id }, { id: students[1].id }] } },
   });
-  console.log('✓  Accounts: oquvchi / student123, otaona / parent123');
+  console.log(`✓  Accounts: oquvchi / ${DEMO_PASSWORD.student}, otaona / ${DEMO_PASSWORD.parent}`);
 
   // ── 9. Demo attendance history (oxirgi ~1 oy, bugun bilan birga) ──
   // Har bir o'quvchiga o'z "profili": a'lochi ~97%, o'rtacha ~88%, sustroq ~72%
@@ -397,11 +431,11 @@ async function main() {
   });
 
   console.log('\n✅  Seed completed.');
-  console.log('   ➜  Admin:    admin / admin123');
-  console.log('   ➜  Teacher:  aliyev / teacher123');
-  console.log('   ➜  Teacher:  karimova / teacher123');
-  console.log('   ➜  Student:  oquvchi / student123');
-  console.log('   ➜  Parent:   otaona / parent123');
+  console.log(`   ➜  Admin:    admin / ${DEMO_PASSWORD.admin}`);
+  console.log(`   ➜  Teacher:  aliyev / ${DEMO_PASSWORD.teacher}`);
+  console.log(`   ➜  Teacher:  karimova / ${DEMO_PASSWORD.teacher}`);
+  console.log(`   ➜  Student:  oquvchi / ${DEMO_PASSWORD.student}`);
+  console.log(`   ➜  Parent:   otaona / ${DEMO_PASSWORD.parent}`);
 }
 
 main()

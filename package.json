@@ -16,6 +16,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
+    "admin:create": "tsx scripts/create-admin.ts",
     "seed:range": "tsx scripts/seed-attendance-range.ts",
     "demo:prepare": "tsx scripts/prepare-demo.ts",
     "test:telegram": "tsx scripts/test-telegram.ts",

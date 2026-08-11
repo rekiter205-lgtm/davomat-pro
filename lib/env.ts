@@ -26,6 +26,12 @@ const schema = z.object({
   // Login brute-force protection
   LOGIN_RATE_LIMIT: z.coerce.number().positive().default(10),
   LOGIN_RATE_WINDOW_SEC: z.coerce.number().positive().default(60),
+
+  // Face scan limit. FaceScanner har 2 soniyada bir marta yuboradi
+  // (≈30/daqiqa), shuning uchun default shundan ancha baland — normal
+  // yo'qlama hech qachon 429 olmaydi, lekin cheksiz oqim to'xtatiladi.
+  RECOGNIZE_RATE_LIMIT: z.coerce.number().positive().default(90),
+  RECOGNIZE_RATE_WINDOW_SEC: z.coerce.number().positive().default(60),
 });
 
 function loadEnv() {
