@@ -119,8 +119,26 @@ Autentifikatsiya yordamchilari:
 
 - `euclideanDistance(a, b)` — Yevklid masofasi (face-api.js standarti)
 - `cosineSimilarity(a, b)` — kosinus o'xshashligi
-- `findBestMatch(probe, candidates, threshold)` — ko'p talabalar orasidan eng yaqin mosligini topadi
+- `findBestMatch(probe, candidates, threshold)` — ko'p talabalar orasidan eng yaqin mosligini topadi. Har bir talabaning **barcha** namunalari tekshiriladi, eng yaqini olinadi
 - `isValidDescriptor(d)` — 128 ta to'g'ri sondan iborat ekanligini tekshiradi
+- `normalizeDescriptors(raw)` — bazadagi qiymatni namunalar ro'yxatiga keltiradi. Eski yozuvlar (`number[128]`) va yangi ko'p-namunali yozuvlar (`number[][]`) ikkalasini ham o'qiydi, shuning uchun migratsiya kerak emas
+- `MAX_FACE_SAMPLES` — bitta talabaga saqlanadigan eng ko'p namuna (5)
+
+### `lib/face-schema.ts`
+`faceDescriptorInput` — students API uchun zod sxemasi; bitta deskriptorni ham,
+namunalar ro'yxatini ham qabul qiladi. `face-utils.ts` sof matematika bo'lib
+qolishi uchun zod'ga bog'liqlik shu yerga ajratilgan.
+
+### `lib/liveness.ts`
+**Tiriklik tekshiruvi.** Kameraga tutilgan fotoni to'sadi (sof matematika, testlangan):
+
+- `eyeAspectRatio(eye)` — ko'z landmark nuqtalaridan ochiqlik nisbati (EAR)
+- `averageEyeAspectRatio(left, right)` — ikkala ko'z bo'yicha o'rtacha
+- `BlinkDetector` — EAR oqimidan pirillashni aniqlaydigan gisterezisli holat mashinasi
+
+Cheklovi: statik fotoni to'sadi, lekin ekrandagi **videoni** to'smaydi va
+tekshiruv brauzerda bo'lgani uchun API'ga to'g'ridan-to'g'ri so'rov yuborish
+bilan chetlab o'tiladi. Batafsil — README, "Security Notes".
 
 ### `lib/notifications.ts`
 Ixtiyoriy bildirishnomalar (env'da konfiguratsiya yo'q bo'lsa, hech narsa qilmaydi):

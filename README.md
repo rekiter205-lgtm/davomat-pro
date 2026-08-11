@@ -175,7 +175,13 @@ npx prisma migrate dev --name init
 npm run seed
 ```
 
-This creates:
+This is the **demo** dataset — fake students and guessable passwords, meant for
+local development only. It refuses to run when `NODE_ENV=production` (see
+[Docker Deployment](#-docker-deployment-recommended-for-production) for the real
+setup). Each password can be overridden with `SEED_ADMIN_PASSWORD`,
+`SEED_TEACHER_PASSWORD`, `SEED_STUDENT_PASSWORD`, `SEED_PARENT_PASSWORD`.
+
+It creates:
 - **admin** / `admin123` — full access
 - **aliyev** / `teacher123`, **karimova** / `teacher123` — teacher role
 - **oquvchi** / `student123` — student role (linked to a 5-B student)
@@ -205,18 +211,54 @@ This populates `public/models/` with:
 npm run dev
 ```
 
-Open <http://localhost:3000> and sign in with `admin / admin123`.
+Open <http://localhost:3000> and sign in with `admin / admin123` (dev seed only).
 
 ### 7. Enroll faces
 
 1. Go to **Talabalar → Yangi talaba** (or open an existing student).
-2. Upload a clear, well-lit, frontal photo.
-3. Click **"Yuzni aniqlash"** — the 128-d descriptor is extracted in your browser.
-4. Save.
+2. Upload **up to 5 photos** of the same student — vary the lighting and angle.
+   One frontal shot works, but recognition in a real classroom is noticeably
+   more reliable with 3–5.
+3. Click **"Yuzni aniqlash"** — a 128-d descriptor is extracted from each photo
+   in your browser. Each thumbnail shows whether a face was found; drop the ones
+   that failed.
+4. Save. Matching compares an incoming face against *every* stored sample and
+   takes the closest, so one bad angle no longer sinks the student.
+
+Only the **first** photo is stored as the display picture — the rest are used to
+derive descriptors and are then discarded, so extra samples cost no extra
+biometric images at rest.
+
+> Existing students enrolled from a single photo keep working unchanged: rows
+> holding one `number[128]` and rows holding `number[][]` are both read
+> transparently (`normalizeDescriptors` in `lib/face-utils.ts`), so no migration
+> is required. Re-enrolling a student **replaces** all of their samples.
 
 ### 8. Run face-scan attendance
 
-Go to **Yuz orqali davomat**, allow camera access, and have students look at the camera. Each match auto-creates an attendance record (PRESENT or LATE based on group start time).
+Go to **Yuz orqali davomat**, allow camera access, and have students look at the camera.
+
+The scanner waits for a **blink** before it reads a face — the badge in the
+corner shows *"Pirillash kutilmoqda"* until it sees one. Each match auto-creates
+an attendance record, and the next student has to blink again. Pass
+`requireLiveness={false}` to `<FaceScanner>` only for enrollment-style capture
+where an operator is deliberately taking the shot.
+
+> **The camera needs HTTPS.** Browsers only expose `getUserMedia` in a secure
+> context, so the scanner works on `localhost` but *not* on
+> `http://192.168.x.x:3001`. To scan from a phone or another machine, start the
+> bundled tunnel:
+> ```bash
+> docker compose --profile tunnel up -d
+> docker compose logs tunnel | grep trycloudflare.com
+> ```
+> Open the printed `https://…` URL. The quick-tunnel address changes on every
+> restart — for permanent use, put the app behind a real domain and certificate.
+
+**Using a phone as the webcam**: install DroidCam or Iriun on the phone and its
+desktop driver on the host; the phone then shows up as a normal camera in the
+picker at the top-right of the video, and the choice is remembered in
+`localStorage`.
 
 ---
 
@@ -226,25 +268,54 @@ Go to **Yuz orqali davomat**, allow camera access, and have students look at the
 
 ```bash
 # In the project root
-echo "JWT_SECRET=$(openssl rand -base64 32)" > .env
+{
+  echo "JWT_SECRET=$(openssl rand -base64 32)"
+  echo "POSTGRES_PASSWORD=$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 24)"
+} > .env
 docker compose up -d --build
 ```
 
+Both variables are **required** — compose refuses to start without them, so a
+deployment can never fall back to a default password.
+
 This boots:
-- `davomat-db` (Postgres 16 with persistent volume)
+- `davomat-db` (Postgres 16 with persistent volume, **not** published to the host)
 - `davomat-app` (Next.js production build)
 
-The app auto-runs `prisma migrate deploy` on startup and listens on **<http://localhost:3000>**.
+The app auto-runs `prisma migrate deploy` on startup and listens on **<http://localhost:3001>**.
+
+> **Changing `POSTGRES_PASSWORD` later** only affects a *brand-new* volume —
+> Postgres reads it once at init. To rotate on an existing database:
+> ```bash
+> docker compose exec db psql -U davomat -d davomat_pro \
+>   -c "ALTER USER davomat WITH PASSWORD 'new-password';"
+> ```
+> then update `.env` and `docker compose up -d`.
 
 ### First-time setup inside the container
 
 ```bash
-# Seed sample users + groups + students
-docker compose exec app npx tsx prisma/seed.ts
+# Create a real admin account (no demo data)
+docker compose exec \
+  -e ADMIN_USERNAME=direktor \
+  -e ADMIN_PASSWORD='at-least-12-chars-with-a-number-1' \
+  -e ADMIN_FULLNAME='Familiya Ism' \
+  app npm run admin:create
 
 # Download AI models into the persistent volume
 docker compose exec app npx tsx scripts/download-models.ts
 ```
+
+For a **demo/pitch** stand you can instead load the sample school
+(fake students, schedule and attendance history):
+
+```bash
+docker compose exec -e ALLOW_DEMO_SEED=1 app npm run seed
+```
+
+`npm run seed` refuses to run when `NODE_ENV=production` unless
+`ALLOW_DEMO_SEED=1` is set, so demo accounts cannot land in a real database
+by accident.
 
 ### View logs
 
@@ -313,13 +384,18 @@ Only works while the lesson's attendance window is open (today, correct period, 
 | Var | Required | Default | Notes |
 |-----|----------|---------|-------|
 | `DATABASE_URL` | ✅ | — | PostgreSQL connection string |
+| `POSTGRES_PASSWORD` | ✅ | — | Docker only; compose refuses to start without it |
 | `JWT_SECRET` | ✅ | — | ≥ 32 chars; rotate to invalidate sessions |
 | `JWT_EXPIRES_IN` | | `7d` | Any [`jose`](https://github.com/panva/jose) duration |
 | `MAX_UPLOAD_SIZE_MB` | | `5` | Photo upload limit |
 | `FACE_MATCH_THRESHOLD` | | `0.55` | Lower = stricter (0.5 strict – 0.6 lenient) |
 | `LOGIN_RATE_LIMIT` | | `10` | Max login attempts per IP per window |
 | `LOGIN_RATE_WINDOW_SEC` | | `60` | Rate-limit window in seconds |
-| `NEXT_PUBLIC_DEMO_CREDENTIALS` | | `0` | `1` pre-fills the login form with demo creds — demo/pitch only |
+| `RECOGNIZE_RATE_LIMIT` | | `90` | Max face scans per user per window (scanner sends ~30/min) |
+| `RECOGNIZE_RATE_WINDOW_SEC` | | `60` | Rate-limit window in seconds |
+| `NEXT_PUBLIC_DEMO_CREDENTIALS` | | `0` | `1` pre-fills the login form with demo creds — demo/pitch only. **Baked in at build time** — changing it needs `docker compose up -d --build` |
+| `ALLOW_DEMO_SEED` | | `0` | `1` lets `npm run seed` write demo data while `NODE_ENV=production` |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | | — | Read by `npm run admin:create` only |
 | `TELEGRAM_BOT_TOKEN` | | — | Enable Telegram notifs |
 | `TELEGRAM_CHAT_ID` | | — | Channel/group ID |
 | `SMS_PROVIDER_EMAIL` | | — | Eskiz.uz account |
@@ -363,12 +439,24 @@ npx prisma migrate reset    # drops & re-runs all migrations + seed
 - Passwords are hashed with **bcrypt** (cost 10).
 - Sessions ride in an **httpOnly + sameSite=Lax** cookie; secure-flagged in production.
 - **Login brute-force protection**: per-IP rate limit with `429 + Retry-After`; a single generic error message prevents username enumeration.
+- **Face-scan rate limit**: `/api/attendance/recognize` is capped per *user* (not per IP — a whole school shares one NAT address). Default 90/min vs. the scanner's ~30/min.
+- **No default credentials**: `POSTGRES_PASSWORD` and `JWT_SECRET` have no fallback values; `npm run admin:create` enforces a 12-char minimum and rejects the demo passwords, and stores no plaintext copy of the admin password.
+- The Postgres port is **not** published to the host — reach it via `docker compose exec db psql`.
 - All write operations on **users / groups / teachers** require `ADMIN` role (middleware **and** per-route checks — defense in depth).
 - Role scoping on reads: teachers see only their groups, students only themselves, parents only their children.
 - **Audit log**: logins (incl. failed), user/student CRUD, manual attendance marks, and finalizations are recorded with actor + IP.
 - File uploads validate MIME (`image/jpeg|png|webp`) and size; randomized filenames prevent overwrite.
 - Security headers + `poweredByHeader: false`; `JWT_SECRET` < 32 chars refuses to boot in production; zod-validated env (fail-fast).
 - Face descriptors are 128 float-32 numbers, **not reversible to face images** — but treat them as biometric data and apply your local privacy laws (GDPR / Uzbekistan Personal Data Protection Act).
+- **Liveness check**: the scanner requires a detected blink (eye-aspect-ratio state machine, `lib/liveness.ts`) before it submits a descriptor, and a *fresh* blink for every mark. This blocks the obvious attack — holding a printed photo or a still image on a phone up to the camera.
+
+  ⚠️ **Known limits of the liveness check.** It is a meaningful bar, not a complete defence:
+  - A **video** of the student played on a phone contains real blinks and will pass.
+  - Detection runs **in the browser**, so anyone able to craft an HTTP request can `POST` a stored descriptor straight to `/api/attendance/recognize` and skip the camera entirely.
+
+  Closing both gaps requires moving detection server-side (upload the frame, run
+  detection + a passive anti-spoof model on the server) — a substantially
+  different architecture from the current client-side pipeline.
 
 ---
 
