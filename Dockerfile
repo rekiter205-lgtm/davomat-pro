@@ -2,10 +2,19 @@
 FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
+# Sekin/uzilib turadigan tarmoqda npm standart sozlamalari bilan yarim yo'lda
+# to'xtab qoladi va node_modules chala bo'lib qoladi.
+ENV NPM_CONFIG_FETCH_RETRIES=5
+ENV NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000
+ENV NPM_CONFIG_FETCH_TIMEOUT=600000
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
 # Use `npm ci` if lock file exists, otherwise `npm install`
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+# npm ba'zan xato bilan tugab ham exit 0 qaytaradi ("Exit handler never
+# called!"). Shu yerda tekshiramiz — chala node_modules bilan builder
+# stage'ga o'tib, u yerda tushunarsiz xato olgandan ko'ra shu yerda yiqilsin.
+RUN test -x node_modules/.bin/prisma && test -x node_modules/.bin/next
 
 # ─── Stage 2: builder ────────────────────────────────────────
 FROM node:20-alpine AS builder
@@ -21,7 +30,9 @@ ENV NEXT_PUBLIC_DEMO_CREDENTIALS=$NEXT_PUBLIC_DEMO_CREDENTIALS
 # runner'ga o'tmaydi; runtime qiymatlar docker-compose'dan keladi.
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 ENV JWT_SECRET="build-time-placeholder-secret-not-used-at-runtime"
-RUN npx prisma generate && npm run build
+# `npx` o'rniga to'g'ridan-to'g'ri lokal binary — npx paket topilmasa
+# registry'ga chiqib ketadi, bu offline/sekin tarmoqda buildni buzadi.
+RUN ./node_modules/.bin/prisma generate && npm run build
 
 # ─── Stage 3: runner ─────────────────────────────────────────
 FROM node:20-alpine AS runner
@@ -53,4 +64,4 @@ ENV HOSTNAME="0.0.0.0"
 
 # Sync DB schema on container start, then run.
 # `prisma db push` works without migration files.
-CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && npx next start -p 3000"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma db push --skip-generate --accept-data-loss && ./node_modules/.bin/next start -p 3000"]
