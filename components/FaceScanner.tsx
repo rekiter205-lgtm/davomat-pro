@@ -1,10 +1,20 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Camera, CameraOff, Loader2, ScanFace, SwitchCamera } from 'lucide-react';
-import { loadFaceModels, detectSingleFace, descriptorToArray } from '@/ai/face-recognition';
+import { Camera, CameraOff, Eye, Loader2, ScanFace, SwitchCamera } from 'lucide-react';
+import {
+  loadFaceModels,
+  detectSingleFace,
+  detectLandmarks,
+  descriptorToArray,
+} from '@/ai/face-recognition';
+import { BlinkDetector, averageEyeAspectRatio } from '@/lib/liveness';
 
 const DEVICE_STORAGE_KEY = 'faceScanner.deviceId';
+
+/** Tiriklik kuzatuvida kadrlar orasidagi interval. Pirillash ~100–400 ms
+ *  davom etadi, shuning uchun namuna olish shundan tez bo'lishi kerak. */
+const LIVENESS_SAMPLE_MS = 120;
 
 /**
  * Telefon/planshetmi? Sensorli qurilmada o'qituvchi qurilmani o'quvchiga
@@ -22,6 +32,11 @@ interface FaceScannerProps {
   continuous?: boolean;
   /** Cooldown (ms) between auto-scans. */
   intervalMs?: number;
+  /**
+   * Deskriptor yuborishdan oldin ko'z pirillatishni talab qilish.
+   * Kameraga tutilgan fotoni to'sadi — yo'qlamada doim yoqiq bo'lishi kerak.
+   */
+  requireLiveness?: boolean;
   /** Disable while a request is in flight. */
   busy?: boolean;
   className?: string;
@@ -31,6 +46,7 @@ export default function FaceScanner({
   onDescriptor,
   continuous = true,
   intervalMs = 2000,
+  requireLiveness = true,
   busy = false,
   className,
 }: FaceScannerProps) {
@@ -41,6 +57,8 @@ export default function FaceScanner({
   const [streamActive, setStreamActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  /** Pirillash kutilmoqda (false) yoki tasdiqlangan (true). */
+  const [liveConfirmed, setLiveConfirmed] = useState(false);
 
   // Kamera qurilmalari (telefonni veb-kamera sifatida tanlash uchun)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
@@ -146,19 +164,58 @@ export default function FaceScanner({
     ctx.strokeRect(box.x, box.y, box.width, box.height);
   }
 
-  // Detection loop
+  // ── Detection loop ────────────────────────────────────────
+  //
+  // Ikki bosqichli. Avval yengil landmark kuzatuvi ko'z pirillashini kutadi
+  // (foto pirillamaydi), pirillash tasdiqlangach — og'ir deskriptor
+  // hisoblanadi va yuboriladi. Har bir belgilash uchun yangi pirillash
+  // kerak, aks holda bitta pirillash bilan ketma-ket bir necha o'quvchini
+  // foto orqali o'tkazib yuborish mumkin bo'lardi.
   useEffect(() => {
     if (modelLoading || !streamActive) return;
+    // Liveness sikli faqat uzluksiz rejimda — bir martalik olishda (ro'yxatga
+    // olish) operator ataylab suratga oladi, u yerda pirillash talab etilmaydi.
+    if (!continuous) return;
+
     let cancelled = false;
     let timeout: ReturnType<typeof setTimeout> | null = null;
+
+    const blinks = new BlinkDetector();
+    let armed = !requireLiveness;
+
+    const schedule = (ms: number) => {
+      if (!cancelled) timeout = setTimeout(tick, ms);
+    };
 
     async function tick() {
       if (cancelled) return;
       const video = videoRef.current;
       if (!video || video.readyState < 2 || busy) {
-        if (continuous) timeout = setTimeout(tick, 500);
+        schedule(500);
         return;
       }
+
+      // 1-bosqich: pirillashni kutish.
+      if (!armed) {
+        try {
+          const sample = await detectLandmarks(video);
+          if (cancelled) return;
+          drawBox(sample?.box ?? null);
+          if (!sample) {
+            // Yuz kadrdan chiqdi — yarim qolgan pirillash hisobga olinmaydi.
+            blinks.reset();
+          } else if (blinks.push(averageEyeAspectRatio(sample.leftEye, sample.rightEye))) {
+            armed = true;
+            setLiveConfirmed(true);
+          }
+        } catch (e) {
+          console.error('liveness error:', e);
+        }
+        schedule(LIVENESS_SAMPLE_MS);
+        return;
+      }
+
+      // 2-bosqich: pirillash tasdiqlandi — deskriptorni olamiz.
       setScanning(true);
       try {
         const result = await detectSingleFace(video);
@@ -166,22 +223,27 @@ export default function FaceScanner({
         drawBox(result?.box ?? null);
         if (result && onDescriptor) {
           await onDescriptor(descriptorToArray(result.descriptor));
+          if (requireLiveness) {
+            // Keyingi o'quvchi uchun yangidan pirillash kerak.
+            armed = false;
+            blinks.reset();
+            setLiveConfirmed(false);
+          }
         }
       } catch (e) {
         console.error('detection error:', e);
       } finally {
         setScanning(false);
-        if (continuous && !cancelled) {
-          timeout = setTimeout(tick, intervalMs);
-        }
+        schedule(intervalMs);
       }
     }
+
     tick();
     return () => {
       cancelled = true;
       if (timeout) clearTimeout(timeout);
     };
-  }, [modelLoading, streamActive, continuous, intervalMs, onDescriptor, busy]);
+  }, [modelLoading, streamActive, continuous, intervalMs, onDescriptor, busy, requireLiveness]);
 
   // ── Manual capture (for non-continuous mode) ──────────────
   async function captureOnce() {
@@ -274,12 +336,27 @@ export default function FaceScanner({
                 <ScanFace className="w-3.5 h-3.5 text-brand-400 animate-pulse" />
                 Skanerlanmoqda
               </>
+            ) : continuous && requireLiveness && !liveConfirmed ? (
+              <>
+                <Eye className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                Pirillash kutilmoqda
+              </>
             ) : (
               <>
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 Faol
               </>
             )}
+          </div>
+        )}
+
+        {/* Tiriklik ko'rsatmasi — o'quvchi nima qilishini bilishi kerak */}
+        {streamActive && !error && continuous && requireLiveness && !liveConfirmed && !scanning && (
+          <div className="absolute bottom-3 inset-x-3 flex justify-center pointer-events-none">
+            <div className="px-3 py-1.5 rounded-full bg-black/70 backdrop-blur-sm text-xs text-white flex items-center gap-2">
+              <Eye className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+              Kameraga qarab koʻzingizni pirillating
+            </div>
           </div>
         )}
       </div>

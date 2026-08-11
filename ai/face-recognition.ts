@@ -15,6 +15,8 @@
 // face-api.js does not officially type its exports cleanly, so we
 // import via dynamic require to avoid bundler issues with `tfjs-node`.
 
+import type { Point } from '@/lib/liveness';
+
 let faceapi: typeof import('face-api.js') | null = null;
 let modelsLoaded = false;
 let loadingPromise: Promise<void> | null = null;
@@ -70,6 +72,44 @@ export async function detectSingleFace(
     descriptor: result.descriptor,
     box: { x: box.x, y: box.y, width: box.width, height: box.height },
     score,
+  };
+}
+
+export interface FaceLandmarksSample {
+  box: { x: number; y: number; width: number; height: number };
+  leftEye: Point[];
+  rightEye: Point[];
+}
+
+/**
+ * Faqat yuz + landmark nuqtalari — 128 o'lchovli deskriptor **hisoblanmaydi**.
+ *
+ * Tiriklik tekshiruvi uchun kadrlarni tez-tez (~8/sek) olish kerak, deskriptor
+ * chiqarish esa eng og'ir bosqich. Shuning uchun pirillashni kuzatishda shu
+ * yengil variant ishlatiladi, deskriptor faqat pirillash tasdiqlangach olinadi.
+ */
+export async function detectLandmarks(
+  input: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
+): Promise<FaceLandmarksSample | null> {
+  if (!modelsLoaded) await loadFaceModels();
+  const api = await getFaceApi();
+
+  // inputSize 320 — 416 ga qaraganda tezroq. Landmark aniqligi yaqin
+  // masofada yetarli, deskriptor baribir to'liq o'lchamda olinadi.
+  const result = await api
+    .detectSingleFace(input, new api.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }))
+    .withFaceLandmarks();
+
+  if (!result) return null;
+
+  const { box } = result.detection;
+  const toPlain = (points: { x: number; y: number }[]): Point[] =>
+    points.map((p) => ({ x: p.x, y: p.y }));
+
+  return {
+    box: { x: box.x, y: box.y, width: box.width, height: box.height },
+    leftEye: toPlain(result.landmarks.getLeftEye()),
+    rightEye: toPlain(result.landmarks.getRightEye()),
   };
 }
 
