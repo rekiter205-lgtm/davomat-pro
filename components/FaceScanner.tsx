@@ -17,6 +17,14 @@ const DEVICE_STORAGE_KEY = 'faceScanner.deviceId';
 const LIVENESS_SAMPLE_MS = 120;
 
 /**
+ * Yuz shuncha vaqt kadrda turib ham pirillash aniqlanmasa, foydalanuvchiga
+ * qo'lda o'tkazish tugmasi ko'rsatiladi. Bu bo'lmasa kamera jim qotib qoladi:
+ * hech qanday so'rov ketmaydi, ekranda ham hech narsa o'zgarmaydi va nima
+ * bo'layotgani tushunarsiz bo'ladi.
+ */
+const BLINK_STUCK_MS = 8000;
+
+/**
  * Telefon/planshetmi? Sensorli qurilmada o'qituvchi qurilmani o'quvchiga
  * qaratadi — orqa kamera kerak. Noutbukda esa yagona kamera old kamera.
  */
@@ -59,6 +67,10 @@ export default function FaceScanner({
   const [scanning, setScanning] = useState(false);
   /** Pirillash kutilmoqda (false) yoki tasdiqlangan (true). */
   const [liveConfirmed, setLiveConfirmed] = useState(false);
+  /** Yuz ko'rinib turibdi, lekin pirillash uzoq vaqt aniqlanmadi. */
+  const [blinkStuck, setBlinkStuck] = useState(false);
+  /** Tugma bosilganda bir martaga pirillash talabini chetlab o'tish. */
+  const skipBlinkRef = useRef(false);
 
   // Kamera qurilmalari (telefonni veb-kamera sifatida tanlash uchun)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
@@ -182,6 +194,8 @@ export default function FaceScanner({
 
     const blinks = new BlinkDetector();
     let armed = !requireLiveness;
+    /** Yuz uzluksiz ko'rinib turgan vaqt — pirillash kutish cho'zilganini bilish uchun. */
+    let faceSeenSince: number | null = null;
 
     const schedule = (ms: number) => {
       if (!cancelled) timeout = setTimeout(tick, ms);
@@ -197,22 +211,38 @@ export default function FaceScanner({
 
       // 1-bosqich: pirillashni kutish.
       if (!armed) {
-        try {
-          const sample = await detectLandmarks(video);
-          if (cancelled) return;
-          drawBox(sample?.box ?? null);
-          if (!sample) {
-            // Yuz kadrdan chiqdi — yarim qolgan pirillash hisobga olinmaydi.
-            blinks.reset();
-          } else if (blinks.push(averageEyeAspectRatio(sample.leftEye, sample.rightEye))) {
-            armed = true;
-            setLiveConfirmed(true);
+        // O'qituvchi "pirillashsiz" tugmasini bosgan bo'lsa — bir martaga o'tkazamiz.
+        if (skipBlinkRef.current) {
+          skipBlinkRef.current = false;
+          armed = true;
+          faceSeenSince = null;
+          setLiveConfirmed(true);
+          setBlinkStuck(false);
+        } else {
+          try {
+            const sample = await detectLandmarks(video);
+            if (cancelled) return;
+            drawBox(sample?.box ?? null);
+            if (!sample) {
+              // Yuz kadrdan chiqdi — yarim qolgan pirillash hisobga olinmaydi.
+              blinks.reset();
+              faceSeenSince = null;
+              setBlinkStuck(false);
+            } else if (blinks.push(averageEyeAspectRatio(sample.leftEye, sample.rightEye))) {
+              armed = true;
+              faceSeenSince = null;
+              setLiveConfirmed(true);
+              setBlinkStuck(false);
+            } else {
+              faceSeenSince ??= Date.now();
+              if (Date.now() - faceSeenSince > BLINK_STUCK_MS) setBlinkStuck(true);
+            }
+          } catch (e) {
+            console.error('liveness error:', e);
           }
-        } catch (e) {
-          console.error('liveness error:', e);
+          schedule(LIVENESS_SAMPLE_MS);
+          return;
         }
-        schedule(LIVENESS_SAMPLE_MS);
-        return;
       }
 
       // 2-bosqich: pirillash tasdiqlandi — deskriptorni olamiz.
@@ -227,7 +257,9 @@ export default function FaceScanner({
             // Keyingi o'quvchi uchun yangidan pirillash kerak.
             armed = false;
             blinks.reset();
+            faceSeenSince = null;
             setLiveConfirmed(false);
+            setBlinkStuck(false);
           }
         }
       } catch (e) {
@@ -352,11 +384,21 @@ export default function FaceScanner({
 
         {/* Tiriklik ko'rsatmasi — o'quvchi nima qilishini bilishi kerak */}
         {streamActive && !error && continuous && requireLiveness && !liveConfirmed && !scanning && (
-          <div className="absolute bottom-3 inset-x-3 flex justify-center pointer-events-none">
-            <div className="px-3 py-1.5 rounded-full bg-black/70 backdrop-blur-sm text-xs text-white flex items-center gap-2">
+          <div className="absolute bottom-3 inset-x-3 flex flex-col items-center gap-2">
+            <div className="px-3 py-1.5 rounded-full bg-black/70 backdrop-blur-sm text-xs text-white flex items-center gap-2 pointer-events-none">
               <Eye className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
               Kameraga qarab koʻzingizni pirillating
             </div>
+            {blinkStuck && (
+              <button
+                type="button"
+                onClick={() => { skipBlinkRef.current = true; }}
+                className="px-3 py-1.5 rounded-full bg-amber-500 text-white text-xs font-medium hover:bg-amber-600"
+                title="Pirillash aniqlanmadi — bir martaga tiriklik tekshiruvisiz skanerlaydi"
+              >
+                Pirillash aniqlanmadi — shundoq skanerlash
+              </button>
+            )}
           </div>
         )}
       </div>

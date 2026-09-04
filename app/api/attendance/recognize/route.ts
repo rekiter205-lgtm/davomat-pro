@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     }
     if (now >= scanSession.closesAt) {
       return NextResponse.json(
-        { error: `Yoʻqlama yopilgan. Kamera ${lesson.attendanceWindowMinutes} daqiqa ochiq edi.` },
+        { error: `Yoʻqlama yopilgan — dars ${lesson.period.endTime} da tugagan.` },
         { status: 403 },
       );
     }
@@ -111,17 +111,71 @@ export async function POST(req: NextRequest) {
       }))
       .filter((c: MatchCandidate) => c.descriptors.length > 0);
 
-    if (candidates.length === 0) {
-      return NextResponse.json(
-        { error: 'Bu guruh talabalarida yuz maʼlumotlari yoʻq' },
-        { status: 404 },
-      );
-    }
+    // Guruhda yuz ma'lumoti umuman yo'q bo'lsa ham to'xtamaymiz: quyidagi
+    // qidiruv kamera oldidagi odam kimligini (boshqa guruhdami yoki bazada
+    // yo'qmi) ayta oladi — o'qituvchi uchun bu quruq xatodan foydaliroq.
+    const groupHasFaces = candidates.length > 0;
 
     const threshold = parseFloat(process.env.FACE_MATCH_THRESHOLD || '0.55');
-    const match = findBestMatch(parsed.data.descriptor, candidates, threshold);
+    const match = groupHasFaces
+      ? findBestMatch(parsed.data.descriptor, candidates, threshold)
+      : null;
     if (!match) {
-      return NextResponse.json({ matched: false, reason: 'Yuz tan olinmadi' });
+      // Guruhda topilmadi — bu ikki xil holat bo'lishi mumkin va o'qituvchi
+      // uchun farqi katta: (1) talaba bazada bor, lekin boshqa guruhda —
+      // adashib kirgan; (2) bazada umuman yo'q — begona odam.
+      // Shuning uchun faqat mos kelmagan holatda butun baza bo'yicha qidiramiz.
+      const others = await prisma.student.findMany({
+        where: { isActive: true },
+        select: {
+          id: true, fullName: true, groupId: true, photoUrl: true,
+          faceDescriptor: true,
+          group: { select: { id: true, name: true } },
+        },
+      });
+
+      const otherCandidates: MatchCandidate[] = others
+        .filter((s: typeof others[number]) => s.groupId !== lesson.groupId)
+        .map((s: typeof others[number]) => ({
+          studentId: s.id,
+          fullName: s.fullName,
+          groupId: s.groupId,
+          descriptors: normalizeDescriptors(s.faceDescriptor as unknown),
+        }))
+        .filter((c: MatchCandidate) => c.descriptors.length > 0);
+
+      const foreign = findBestMatch(parsed.data.descriptor, otherCandidates, threshold);
+      if (foreign) {
+        const s = others.find((o: typeof others[number]) => o.id === foreign.studentId)!;
+        const groupName = s.group?.name ?? null;
+        return NextResponse.json({
+          matched: false,
+          wrongGroup: true,
+          reason: groupName
+            ? `${s.fullName} — ${groupName} guruhiga tegishli, bu darsda emas`
+            : `${s.fullName} — hech qaysi guruhga biriktirilmagan`,
+          student: {
+            id: s.id,
+            fullName: s.fullName,
+            photoUrl: s.photoUrl,
+            group: s.group ?? null,
+          },
+          confidence: foreign.confidence,
+        });
+      }
+
+      // Hech qayerda topilmadi. Guruh ro'yxatga olinmagan bo'lsa buni
+      // qo'shimcha izoh sifatida aytamiz — asosiy xabar baribir bir xil:
+      // bu yuz bazada yo'q.
+      return NextResponse.json({
+        matched: false,
+        notInDatabase: true,
+        groupNotEnrolled: !groupHasFaces,
+        reason: 'Bazada topilmadi',
+        hint: groupHasFaces
+          ? undefined
+          : `${lesson.group.name} guruhi talabalarining yuzi umuman kiritilmagan`,
+      });
     }
 
     const matchedStudent = students.find((s: typeof students[number]) => s.id === match.studentId)!;

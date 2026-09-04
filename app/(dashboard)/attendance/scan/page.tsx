@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { CheckCircle2, AlertTriangle, XCircle, Clock, BookOpen, Loader2, ArrowLeft, ScanFace, Lock } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, Clock, BookOpen, Loader2, ArrowLeft, ScanFace, Lock, UserX } from 'lucide-react';
 import toast from 'react-hot-toast';
 import FaceScanner from '@/components/FaceScanner';
 import { statusLabel, statusBadge, formatTime, attendanceState, formatCountdown, toDateKey } from '@/lib/utils';
@@ -27,6 +27,14 @@ interface Lesson {
 interface RecognizeResponse {
   matched: boolean;
   alreadyMarked?: boolean;
+  /** Yuz tanildi, lekin talaba boshqa guruhda */
+  wrongGroup?: boolean;
+  /** Yuz hech bir talabaga mos kelmadi */
+  notInDatabase?: boolean;
+  /** Bu guruh talabalarining yuzi umuman kiritilmagan */
+  groupNotEnrolled?: boolean;
+  /** Asosiy xabarga qo'shimcha izoh */
+  hint?: string;
   reason?: string;
   error?: string;
   student?: { id: string; fullName: string; photoUrl: string; group: { id: string; name: string } | null };
@@ -110,7 +118,7 @@ function ScanContent() {
         return;
       }
       setAttSession(data.session);
-      toast.success(`Kamera ${lesson.attendanceWindowMinutes} daqiqaga ochildi`);
+      toast.success(`Kamera dars oxirigacha (${lesson.period.endTime}) ochildi`);
     } catch {
       toast.error('Tarmoq xatosi');
     } finally {
@@ -241,8 +249,8 @@ function ScanContent() {
               Yoʻqlama hali ochilmagan
             </div>
             <div className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
-              Boshlaganingizdan keyin kamera {lesson.attendanceWindowMinutes} daqiqa ochiq turadi.
-              Vaqt tugagach qayta ochib boʻlmaydi.
+              Boshlaganingizdan keyin kamera dars oxirigacha ({lesson.period.endTime})
+              ochiq turadi. Dars tugagach qayta ochib boʻlmaydi.
             </div>
           </div>
           <button onClick={openAttendance} disabled={opening} className="btn-primary">
@@ -365,6 +373,49 @@ function ScanContent() {
 }
 
 function ResultBanner({ result }: { result: RecognizeResponse }) {
+  // Boshqa guruh talabasi — yuz tanildi, lekin yo'qlama bu darsga tegishli emas.
+  // Xato emas, shuning uchun qizil emas, sariq: o'qituvchi kimligini ko'rsin.
+  if (!result.matched && result.wrongGroup) {
+    return (
+      <div className="card p-3 mt-3 flex items-center gap-3 bg-amber-50 dark:bg-amber-500/10 border-amber-200">
+        <img
+          src={result.student?.photoUrl || '/uploads/placeholder.png'}
+          alt=""
+          className="w-10 h-10 rounded-full object-cover bg-slate-200 flex-shrink-0"
+          onError={(e) => { (e.target as HTMLImageElement).src = '/uploads/placeholder.png'; }}
+        />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-amber-900 dark:text-amber-200">
+            {result.student?.fullName}
+          </div>
+          <div className="text-xs text-amber-700 dark:text-amber-300">
+            {result.student?.group
+              ? `${result.student.group.name} guruhiga tegishli — bu darsda emas, belgilanmadi`
+              : 'Guruhga biriktirilmagan — belgilanmadi'}
+          </div>
+        </div>
+        <span className="text-xs text-amber-700 dark:text-amber-300 flex-shrink-0">
+          {((result.confidence ?? 0) * 100).toFixed(0)}%
+        </span>
+      </div>
+    );
+  }
+  if (!result.matched && result.notInDatabase) {
+    return (
+      <div className="card p-3 mt-3 flex items-center gap-3 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700">
+        <UserX className="w-5 h-5 text-slate-500 flex-shrink-0" />
+        <div className="flex-1">
+          <div className="text-sm font-medium text-slate-700 dark:text-slate-200">Bazada topilmadi</div>
+          <div className="text-xs text-slate-500">
+            {result.hint ?? 'Bu yuz hech bir talabaga mos kelmadi'}
+          </div>
+        </div>
+        {result.groupNotEnrolled && (
+          <Link href="/students" className="btn-primary text-xs flex-shrink-0">Talabalar</Link>
+        )}
+      </div>
+    );
+  }
   if (!result.matched) {
     return (
       <div className="card p-3 mt-3 flex items-center gap-3 bg-rose-50 dark:bg-rose-500/10 border-rose-200">

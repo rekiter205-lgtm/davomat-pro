@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Upload, Loader2, ScanFace, CheckCircle2, X, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Upload, Loader2, ScanFace, CheckCircle2, X, AlertTriangle, Camera } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { loadFaceModels, descriptorFromImage, descriptorToArray } from '@/ai/face-recognition';
+import CameraCapture from '@/components/CameraCapture';
 import { MAX_FACE_SAMPLES } from '@/lib/face-utils';
 
 interface Group { id: string; name: string }
@@ -73,6 +74,8 @@ export default function StudentFormPage() {
   const [saving, setSaving] = useState(false);
   const [modelsLoading, setModelsLoading] = useState(true);
 
+  const [cameraOpen, setCameraOpen] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -110,6 +113,15 @@ export default function StudentFormPage() {
     const files = Array.from(e.target.files ?? []);
     // Bir xil faylni qayta tanlash mumkin bo'lishi uchun inputni tozalaymiz.
     e.target.value = '';
+    await addSamples(files);
+  }
+
+  /**
+   * Namunalar ro'yxatiga rasm qo'shadi. Manba muhim emas — diskdan tanlangan
+   * fayl ham, kameradan olingan kadr ham shu yerdan o'tadi, shuning uchun
+   * deskriptor olish va saqlash mantig'i ikkalasi uchun bir xil.
+   */
+  async function addSamples(files: File[]) {
     if (files.length === 0) return;
 
     const room = MAX_FACE_SAMPLES - samples.length;
@@ -332,7 +344,7 @@ export default function StudentFormPage() {
                 </div>
               ))}
             </div>
-          ) : (
+          ) : cameraOpen ? null : (
             <div className="aspect-square w-full max-w-sm mx-auto rounded-xl bg-slate-100 dark:bg-slate-800 overflow-hidden relative border-2 border-dashed border-slate-300 dark:border-slate-700">
               {photoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -355,25 +367,42 @@ export default function StudentFormPage() {
             className="hidden"
           />
 
-          <div className="flex gap-2">
+          {cameraOpen && (
+            <CameraCapture
+              onCapture={(file) => addSamples([file])}
+              onClose={() => setCameraOpen(false)}
+              disabled={samples.length >= MAX_FACE_SAMPLES}
+              disabledReason={`Chegara toʻldi — eng koʻpi ${MAX_FACE_SAMPLES} ta rasm`}
+            />
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setCameraOpen((v) => !v)}
+              className="btn-secondary"
+            >
+              <Camera className="w-4 h-4" /> {cameraOpen ? 'Kamerani yopish' : 'Kameradan olish'}
+            </button>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={samples.length >= MAX_FACE_SAMPLES}
-              className="btn-secondary flex-1"
+              className="btn-secondary"
             >
               <Upload className="w-4 h-4" /> Rasm qoʻshish ({samples.length}/{MAX_FACE_SAMPLES})
             </button>
-            <button
-              type="button"
-              onClick={extractFaces}
-              disabled={pendingCount === 0 || extracting || modelsLoading}
-              className="btn-primary flex-1"
-            >
-              {extracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanFace className="w-4 h-4" />}
-              Yuzni aniqlash
-            </button>
           </div>
+
+          <button
+            type="button"
+            onClick={extractFaces}
+            disabled={pendingCount === 0 || extracting || modelsLoading}
+            className="btn-primary w-full"
+          >
+            {extracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanFace className="w-4 h-4" />}
+            Yuzni aniqlash
+          </button>
 
           {modelsLoading && (
             <p className="text-xs text-slate-500 flex items-center gap-1.5">

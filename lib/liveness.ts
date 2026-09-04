@@ -61,11 +61,11 @@ export function averageEyeAspectRatio(leftEye: Point[], rightEye: Point[]): numb
 }
 
 export interface BlinkDetectorOptions {
-  /** Shu qiymatdan pastga tushsa — ko'z yumilgan deb hisoblanadi. */
-  closedThreshold?: number;
-  /** Shu qiymatdan yuqoriga chiqsa — ko'z ochilgan. Gisterezis: ikki chegara
-   *  orasidagi farq chegara atrofidagi "titrash"ni pirillash deb hisoblamaydi. */
-  openThreshold?: number;
+  /** Ochiq ko'z darajasining shu ulushidan pastga tushsa — yumiq. */
+  closedRatio?: number;
+  /** Shu ulushdan yuqoriga qaytsa — ochiq. closedRatio bilan orasidagi
+   *  bo'shliq gisterezis: chegara atrofidagi titrash pirillash sanalmaydi. */
+  openRatio?: number;
   /** Pirillash deb tan olish uchun ko'z yumiq turishi kerak bo'lgan eng kam kadr. */
   minClosedFrames?: number;
   /** Bundan uzoq yumiq tursa — bu pirillash emas (odam ko'zini yumib olgan
@@ -74,8 +74,8 @@ export interface BlinkDetectorOptions {
 }
 
 const DEFAULTS: Required<BlinkDetectorOptions> = {
-  closedThreshold: 0.21,
-  openThreshold: 0.27,
+  closedRatio: 0.75,
+  openRatio: 0.88,
   minClosedFrames: 1,
   maxClosedFrames: 10,
 };
@@ -83,17 +83,48 @@ const DEFAULTS: Required<BlinkDetectorOptions> = {
 /**
  * EAR qiymatlari oqimini kuzatib, pirillash sodir bo'lganini aytadi.
  *
- * Holat mashinasi: OCHIQ → (EAR < closedThreshold) → YUMIQ →
- * (EAR > openThreshold, yumiqlik davomiyligi me'yorda) → pirillash.
+ * Chegaralar **nisbiy**. Qat'iy son (masalan "yumiq < 0.21") ishlamaydi:
+ * ochiq ko'zning EAR qiymati kamera sifati, masofa, rakurs va odamning
+ * ko'z kesimiga qarab 0.20 dan 0.40 gacha farq qiladi. Arzon veb-kamerada
+ * ochiq ko'z ham 0.25 chiqishi mumkin — qat'iy "ochiq > 0.27" sharti hech
+ * qachon bajarilmaydi va pirillash umuman aniqlanmaydi.
+ *
+ * Shuning uchun kuzatuvchi ochiq ko'zning o'z darajasini (`baseline`)
+ * o'lchab boradi va chegaralarni shundan foizda oladi.
+ *
+ * Holat mashinasi: OCHIQ → (EAR < baseline·closedRatio) → YUMIQ →
+ * (EAR > baseline·openRatio, yumiqlik davomiyligi me'yorda) → pirillash.
  */
 export class BlinkDetector {
   private readonly opts: Required<BlinkDetectorOptions>;
   private closedFrames = 0;
   private eyesClosed = false;
   private blinks = 0;
+  /** Ochiq ko'zning joriy darajasi. Birinchi kadrda o'rnatiladi. */
+  private baseline: number | null = null;
 
   constructor(options: BlinkDetectorOptions = {}) {
     this.opts = { ...DEFAULTS, ...options };
+  }
+
+  /**
+   * Ochiq ko'z darajasini yangilaydi: yuqoriga tez ko'tariladi (ko'z ochildi
+   * — bu haqiqiy daraja), pastga juda sekin tushadi (pirillash paytidagi
+   * past qiymatlar darajani pasaytirib yubormasligi kerak).
+   */
+  private updateBaseline(ear: number): void {
+    if (this.baseline === null) {
+      this.baseline = ear;
+      return;
+    }
+    const rate = ear > this.baseline ? 0.5 : 0.02;
+    this.baseline += rate * (ear - this.baseline);
+  }
+
+  /** Joriy o'lchov bo'yicha hisoblangan chegaralar. */
+  get thresholds(): { closed: number; open: number } {
+    const base = this.baseline ?? 0;
+    return { closed: base * this.opts.closedRatio, open: base * this.opts.openRatio };
   }
 
   /**
@@ -101,7 +132,9 @@ export class BlinkDetector {
    * @returns shu kadrda pirillash yakunlangan bo'lsa `true`.
    */
   push(ear: number): boolean {
-    const { closedThreshold, openThreshold, minClosedFrames, maxClosedFrames } = this.opts;
+    const { minClosedFrames, maxClosedFrames } = this.opts;
+    const { closed: closedThreshold, open: openThreshold } = this.thresholds;
+    this.updateBaseline(ear);
 
     if (ear < closedThreshold) {
       this.eyesClosed = true;
@@ -129,10 +162,12 @@ export class BlinkDetector {
     this.eyesClosed = false;
   }
 
-  /** Sanoqni ham nolga tushiradi (yangi o'quvchi kelganda). */
+  /** Sanoqni ham nolga tushiradi (yangi o'quvchi kelganda).
+   *  Ochiq ko'z darajasi ham tozalanadi — keyingi odamniki boshqacha. */
   resetAll(): void {
     this.reset();
     this.blinks = 0;
+    this.baseline = null;
   }
 
   get blinkCount(): number {

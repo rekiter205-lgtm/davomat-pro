@@ -114,7 +114,7 @@ function LessonCard({
         if (res.status === 409) router.refresh();
         return;
       }
-      toast.success(`Kamera ${lesson.attendanceWindowMinutes} daqiqaga ochildi`);
+      toast.success(`Kamera dars oxirigacha (${lesson.period.endTime}) ochildi`);
       router.push(`/attendance/scan?lessonId=${lesson.id}`);
     } catch {
       toast.error('Tarmoq xatosi');
@@ -176,7 +176,7 @@ function LessonCard({
               {opening ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanFace className="w-4 h-4" />}
               <span>Yoʻqlamani boshlash</span>
               <span className="ml-1 text-xs opacity-90">
-                ({lesson.attendanceWindowMinutes} daq.)
+                ({lesson.period.endTime} gacha)
               </span>
             </button>
           )}

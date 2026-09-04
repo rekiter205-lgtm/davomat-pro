@@ -4,7 +4,10 @@
  * GET  /api/attendance/session?lessonId=...  → bugungi sessiya (yoki null)
  * POST /api/attendance/session { lessonId }  → sessiyani ochadi
  *
- * Kamera faqat sessiya ochiq (now < closesAt) bo'lganda ishlaydi.
+ * Kamera faqat sessiya ochiq (now < closesAt) bo'lganda ishlaydi. Sessiya
+ * darsning tugash vaqtida (para `endTime`) yopiladi — ya'ni yo'qlamani dars
+ * davomida istalgan paytda olish mumkin.
+ *
  * Bir dars × bir kun uchun faqat bitta sessiya — vaqti tugagach qayta ochib
  * bo'lmaydi (DB darajasida unique [lessonId, date] bilan kafolatlangan).
  */
@@ -102,7 +105,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const closesAt = new Date(now.getTime() + lesson.attendanceWindowMinutes * 60_000);
+    // Kamera dars oxirigacha ochiq turadi. `attendanceWindowMinutes` hozircha
+    // ishlatilmaydi — qat'iy qisqa oyna pilotda juda noqulay bo'ldi.
+    const closesAt = at(now, lesson.period.endTime);
 
     let session;
     try {
@@ -128,7 +133,7 @@ export async function POST(req: NextRequest) {
       actorId: user.sub,
       actorName: user.fullName,
       targetId: lesson.id,
-      details: { closesAt, windowMinutes: lesson.attendanceWindowMinutes },
+      details: { closesAt, closesWith: 'lessonEnd', endTime: lesson.period.endTime },
     });
 
     return NextResponse.json({ session }, { status: 201 });

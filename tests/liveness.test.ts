@@ -141,6 +141,23 @@ describe('BlinkDetector', () => {
     expect(d.blinkCount).toBe(0);
   });
 
+  it('detects a blink on a camera whose open-eye ratio is low', () => {
+    // Arzon veb-kamerada ochiq ko'z ~0.24 chiqadi. Qat'iy "ochiq > 0.27"
+    // sharti bunda hech qachon bajarilmasdi va pirillash aniqlanmasdi.
+    const d = new BlinkDetector();
+    for (let i = 0; i < 5; i++) d.push(0.24);
+    expect(d.push(0.16)).toBe(false); // yumildi
+    expect(d.push(0.24)).toBe(true);  // ochildi → pirillash
+    expect(d.blinkCount).toBe(1);
+  });
+
+  it('exposes thresholds scaled to the measured open-eye level', () => {
+    const d = new BlinkDetector();
+    d.push(0.40);
+    expect(d.thresholds.closed).toBeCloseTo(0.40 * 0.75, 6);
+    expect(d.thresholds.open).toBeCloseTo(0.40 * 0.88, 6);
+  });
+
   it('resetAll clears the counter too', () => {
     const d = new BlinkDetector();
     d.push(0.35);

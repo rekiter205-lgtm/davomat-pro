@@ -392,8 +392,8 @@ export default function SchedulePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                  Yoʻqlama oynasi (daqiqa)
+                <label className="block text-sm font-medium text-slate-400 dark:text-slate-500 mb-1.5">
+                  Yoʻqlama oynasi (daqiqa) — hozircha ishlatilmaydi
                 </label>
                 <input
                   type="number"
@@ -403,7 +403,10 @@ export default function SchedulePage() {
                   min={1}
                   max={60}
                 />
-                <p className="text-xs text-slate-400 mt-1">Dars boshlanishidan necha daqiqa kamera ochiq</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Hozir kamera dars oxirigacha ochiq turadi, shuning uchun bu qiymat
+                  hech narsaga taʼsir qilmaydi.
+                </p>
               </div>
 
               <div className="flex gap-2 pt-2">
